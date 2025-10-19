@@ -761,19 +761,47 @@ jobs:
 **Core Tables:**
 
 ```
-users
-├── id (UUID, PK)
+users (public.users - managed by application)
+├── id (UUID, PK, FK → auth.users)
+│   └── References Supabase auth.users(id) for authentication
+│       auth.users handles passwords, sessions, email verification
+│       public.users stores business/profile data
 ├── email (VARCHAR, UNIQUE)
 ├── full_name (VARCHAR)
-├── role (ENUM: admin, technician, viewer)
-├── company_id (UUID, FK → companies)
+├── default_company_id (UUID, FK → companies, NULLABLE)
 └── timestamps
+└── Note: Trigger auto-creates public.users when auth.users record created
+
+user_companies (junction table for multi-company access)
+├── id (UUID, PK)
+├── user_id (UUID, FK → users)
+├── company_id (UUID, FK → companies)
+├── role (ENUM: admin, technician, viewer)
+├── is_active (BOOLEAN, DEFAULT true)
+├── created_at, updated_at
+└── UNIQUE(user_id, company_id)
 
 companies
 ├── id (UUID, PK)
-├── name (VARCHAR)
-├── address (TEXT)
+├── name (VARCHAR, NOT NULL)
+├── primary_contact_email (VARCHAR, NOT NULL)
+│   └── Fallback contact for support, recovery, critical notifications
+│       Can differ from admin user emails
+│       Used for billing/support if all admins deleted
+├── settings (JSONB, DEFAULT '{}')
+│   └── General company settings (user policies, AI config, feature flags, etc.)
+│       Schema validated in application layer via Zod
 └── timestamps
+
+schemas (custom field definitions per entity type)
+├── id (UUID, PK)
+├── company_id (UUID, FK → companies)
+├── entity_type (ENUM: 'work_orders', 'equipment', 'documents', etc.)
+├── schema_definition (JSONB)
+│   └── Field definitions (name, type, required, validation, etc.)
+│       If no schema exists for entity_type, use default/core fields only
+├── created_at, updated_at
+└── UNIQUE(company_id, entity_type)
 
 equipment
 ├── id (UUID, PK)
@@ -786,11 +814,16 @@ equipment
 
 work_orders
 ├── id (UUID, PK)
-├── company_id, equipment_id (FK)
+├── company_id (UUID, FK → companies)
+├── equipment_id (UUID, FK → equipment, NULLABLE)
 ├── title, description
 ├── status (ENUM), priority (ENUM)
 ├── created_by, assigned_to (FK → users)
 ├── due_date, completed_at (nullable)
+├── custom_fields (JSONB, DEFAULT '{}')
+│   └── Company-specific fields (cost, vendor, parts, etc.)
+│       Schema defined in companies.settings.work_orders.custom_fields_schema
+│       Validated in application layer via Zod
 └── timestamps
 
 documents
@@ -822,6 +855,17 @@ conversation_messages
 ├── content (TEXT)
 ├── metadata (JSONB) - citations, function calls
 └── timestamp
+
+invites (optional, for admin invite flow)
+├── id (UUID, PK)
+├── company_id (UUID, FK → companies)
+├── email (VARCHAR)
+├── role (ENUM: admin, technician, viewer)
+├── token (VARCHAR, UNIQUE)
+├── expires_at (TIMESTAMP)
+├── used_at (TIMESTAMP, NULLABLE)
+├── created_by (UUID, FK → users)
+└── created_at
 ```
 
 **Indexes (Performance):**
@@ -832,10 +876,98 @@ CREATE INDEX idx_work_orders_status ON work_orders(status);
 CREATE INDEX idx_equipment_company ON equipment(company_id);
 CREATE INDEX idx_documents_company ON documents(company_id);
 CREATE INDEX idx_messages_session ON conversation_messages(session_id);
+CREATE INDEX idx_user_companies_user ON user_companies(user_id);
+CREATE INDEX idx_user_companies_company ON user_companies(company_id);
+CREATE INDEX idx_schemas_company ON schemas(company_id);
+CREATE UNIQUE INDEX idx_schemas_company_entity ON schemas(company_id, entity_type);
 
 -- Vector search (pgvector fallback)
 CREATE INDEX idx_chunks_embedding ON document_chunks 
   USING ivfflat (embedding vector_cosine_ops);
+
+-- JSONB indexes for custom fields (optional, add as needed)
+CREATE INDEX idx_companies_settings ON companies USING GIN (settings);
+CREATE INDEX idx_work_orders_custom_fields ON work_orders USING GIN (custom_fields);
+CREATE INDEX idx_schemas_definition ON schemas USING GIN (schema_definition);
+```
+
+**Company Settings & Custom Schemas:**
+
+**Company Settings (`companies.settings`):**
+- Stores general company configurations (user policies, AI settings, feature flags, notifications, etc.)
+- Flexible JSONB structure allows adding new settings without schema migrations
+- Schema validation performed in application layer using Zod
+- Examples: max_ai_messages_per_day, mfa_required, allow_contractors, email_notifications_enabled
+
+**Custom Schemas (`schemas` table):**
+- Defines custom field schemas for any entity type (work_orders, equipment, documents, etc.)
+- One row per company per entity_type (enforced by UNIQUE constraint)
+- If no schema exists for an entity_type, use default/core fields only
+- Stores field definitions (name, type, required, validation rules, options, etc.)
+- Supports various field types: text, number, date, select, multiselect, checkbox, etc.
+- Schema validation performed in application layer using Zod
+- Avoids cluttering companies table with multiple schema columns
+- Easy to extend to new entity types without database migrations
+
+**Entity Custom Fields (e.g., `work_orders.custom_fields`):**
+- Stores actual custom field data for each entity instance
+- Structure must match company's schema for that entity_type
+- Enables CSV import from existing CMMS systems
+- Dynamic UI form generation based on company schema
+- AI can extract custom fields during work order creation
+- Examples: cost_estimate, vendor, parts_needed, safety_level
+
+**Multi-Company User Access:**
+
+Users can belong to multiple companies (common for contractors). The `user_companies` junction table manages this many-to-many relationship.
+
+**Access Patterns:**
+
+- **Regular Employee**: One record in `user_companies` (single company)
+- **Contractor**: Multiple records in `user_companies` (multiple companies)
+- **Former Employee**: `is_active = false` (revoke access without deletion)
+
+**Example Data:**
+
+```sql
+-- Regular employee (John) - works for one company
+INSERT INTO user_companies VALUES
+  ('uc-1', 'john-id', 'acme-corp', 'technician', true);
+
+-- Contractor (Jane) - works for multiple companies
+INSERT INTO user_companies VALUES
+  ('uc-2', 'jane-id', 'acme-corp', 'technician', true),
+  ('uc-3', 'jane-id', 'beta-mfg', 'admin', true),
+  ('uc-4', 'jane-id', 'gamma-ind', 'viewer', true);
+```
+
+**Session Management:**
+
+When a user logs in:
+1. Fetch all companies they have access to from `user_companies` where `is_active = true`
+2. Set `activeCompanyId` in session (defaults to `default_company_id` or first company)
+3. All queries filtered by `activeCompanyId` from session
+4. Company switcher in header UI allows switching between companies
+5. Switching company updates session and re-validates access
+
+**UI Logic:**
+
+```typescript
+// Check if user needs company switcher
+const userCompanies = await supabase
+  .from('user_companies')
+  .select('*, companies(*)')
+  .eq('user_id', userId)
+  .eq('is_active', true);
+
+const needsSwitcher = userCompanies.length > 1;
+
+// Render UI accordingly
+{needsSwitcher ? (
+  <CompanySwitcher companies={userCompanies} />
+) : (
+  <span>{userCompanies[0].companies.name}</span>
+)}
 ```
 
 ### 5.2 Row-Level Security (RLS)
@@ -843,21 +975,32 @@ CREATE INDEX idx_chunks_embedding ON document_chunks
 **Supabase RLS Policies:**
 
 ```sql
--- Users can only see their company's data
+-- Users can only see data for their active company
+-- Note: activeCompanyId is stored in session/context, not in users table
 ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY equipment_select_policy ON equipment
   FOR SELECT
-  USING (company_id = (SELECT company_id FROM users WHERE id = auth.uid()));
+  USING (
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() AND is_active = true
+    )
+  );
 
 CREATE POLICY equipment_insert_policy ON equipment
   FOR INSERT
   WITH CHECK (
-    company_id = (SELECT company_id FROM users WHERE id = auth.uid())
-    AND (SELECT role FROM users WHERE id = auth.uid()) = 'admin'
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() 
+        AND is_active = true
+        AND role = 'admin'
+    )
   );
 
 -- Similar policies for work_orders, documents, etc.
+-- Note: Role-based access is enforced through user_companies.role
 ```
 
 ### 5.3 Vector Storage (Pinecone)
@@ -1351,6 +1494,17 @@ Instructions: [Guidelines for response format, citations, etc.]
 
 ### 8.1 Authentication
 
+**Dual-Table User Pattern:**
+
+The application uses a dual-table pattern for user management:
+- **`auth.users`** (Supabase-managed): Handles authentication (passwords, sessions, email verification)
+- **`public.users`** (Application-managed): Stores business/profile data (full_name, default_company_id, etc.)
+
+Both tables share the same UUID for each user. A database trigger auto-creates `public.users` when `auth.users` record is created. This pattern enables:
+- Migration flexibility (auth provider can be swapped without losing business data)
+- Custom fields without extending Supabase's auth schema
+- Standard relational foreign keys to `public.users`
+
 **Supabase Auth:**
 - Method: JWT-based authentication
 - Token Storage: HTTP-only cookies (server-side) or localStorage (client-side)
@@ -1360,10 +1514,58 @@ Instructions: [Guidelines for response format, citations, etc.]
 **Sign Up/Sign In Flow:**
 ```
 1. User provides email + password
-2. Supabase Auth validates and creates session
-3. JWT token returned to client
-4. Token included in all subsequent requests
-5. Middleware validates token on protected routes
+2. Supabase creates auth.users record (handles password hashing, email verification)
+3. Database trigger creates matching public.users record with same UUID
+4. User assigned to company via one of two methods:
+   a) Admin invite: User accepts invite → Added to user_companies with pre-set company + role
+   b) Self-registration: User creates new company → Added to user_companies as admin
+5. JWT token returned to client with user_id
+6. Fetch user's companies from user_companies table
+7. Set active company (from default_company_id or first available)
+8. Token + activeCompanyId stored in session
+9. All subsequent requests filtered by activeCompanyId
+```
+
+**Company Assignment Methods:**
+
+**Option A: Admin Invite (Recommended for existing companies)**
+```typescript
+// Admin creates invite
+POST /api/invites
+{
+  email: "technician@example.com",
+  companyId: "acme-corp",
+  role: "technician"
+}
+→ Sends email with invite token
+
+// User accepts invite and signs up
+POST /api/auth/accept-invite
+{
+  inviteToken: "xyz...",
+  password: "...",
+  fullName: "John Doe"
+}
+→ Creates auth.users + public.users + adds to user_companies
+```
+
+**Option B: Self-Registration (Create new company)**
+```typescript
+// User signs up and creates company
+POST /api/auth/signup
+{
+  email: "admin@newcompany.com",
+  password: "...",
+  fullName: "Jane Smith",
+  companyName: "ACME Manufacturing",
+  primaryContactEmail: "contact@acme.com",
+  createContactAsAdmin: false  // Optional: Auto-invite contact as admin
+}
+→ Creates auth.users + public.users + company + adds creator to user_companies as admin
+→ If createContactAsAdmin=true and primaryContactEmail differs:
+   - Check if user with that email exists
+   - If exists: Add to user_companies as admin
+   - If not: Send invite → Becomes admin on acceptance
 ```
 
 **WebSocket Authentication:**
@@ -1373,11 +1575,14 @@ Instructions: [Guidelines for response format, citations, etc.]
 
 ### 8.2 Authorization (RBAC)
 
-**Roles:**
+**Roles (Per-Company):**
+
+User roles are defined per company in the `user_companies` table. A user can have different roles at different companies.
+
 ```
 Admin:
   - Full CRUD on equipment, documents, work orders
-  - User management
+  - User management (invite/remove users)
   - Company settings
 
 Technician:
@@ -1391,26 +1596,96 @@ Viewer:
   - No chat access (optional restriction)
 ```
 
+**Example: Same User, Different Roles:**
+```sql
+-- Jane has different roles at different companies
+user_companies:
+{ user_id: "jane-id", company_id: "acme-corp", role: "technician" }
+{ user_id: "jane-id", company_id: "beta-mfg", role: "admin" }
+{ user_id: "jane-id", company_id: "gamma-ind", role: "viewer" }
+```
+
 **Permission Checking:**
-- Middleware validates role for each endpoint
-- Row-level checks for resource ownership
-- Company-scoped access (user can only see own company data)
+```typescript
+// Check user's role for active company
+async function checkPermission(userId: string, companyId: string, requiredRole: string) {
+  const userCompany = await supabase
+    .from('user_companies')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .single();
+  
+  if (!userCompany) return false;
+  
+  // Check if user has required role
+  const roleHierarchy = { admin: 3, technician: 2, viewer: 1 };
+  return roleHierarchy[userCompany.role] >= roleHierarchy[requiredRole];
+}
+```
+
+**Authorization Flow:**
+- Middleware extracts userId and activeCompanyId from session
+- Fetch user's role for that company from user_companies
+- Validate role permits the requested action
+- Row-level checks ensure resource belongs to active company
 
 ### 8.3 Data Isolation
 
 **Multi-Tenancy Strategy:**
-- Company-scoped queries (filter by company_id)
-- Row-Level Security (RLS) policies in Supabase
+- Company-scoped queries (filter by activeCompanyId from session)
+- Users can access multiple companies, but only one at a time
+- Row-Level Security (RLS) policies in Supabase validate company access
 - Vector search filtered by company metadata
 - File storage organized by company folders
+
+**Active Company Context:**
+```typescript
+// Session stores active company
+interface UserSession {
+  userId: string;
+  activeCompanyId: string;  // Current company context
+  role: string;             // Role at active company
+}
+
+// All queries use active company
+const workOrders = await supabase
+  .from('work_orders')
+  .select()
+  .eq('company_id', session.activeCompanyId);
+```
 
 **RLS Policies:**
 ```
 All tables have policies that:
-- Filter SELECT by user's company_id
-- Validate INSERT/UPDATE belong to user's company
-- Restrict DELETE based on role
+- Filter SELECT to allow access to any company user belongs to (via user_companies)
+- Validate INSERT/UPDATE use user's activeCompanyId
+- Restrict DELETE based on role at that company
 - Enforce at database level (defense in depth)
+```
+
+**Company Switching:**
+```typescript
+// User switches to different company
+async function switchCompany(userId: string, newCompanyId: string) {
+  // Verify user has access to this company
+  const access = await supabase
+    .from('user_companies')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('company_id', newCompanyId)
+    .eq('is_active', true)
+    .single();
+  
+  if (!access) throw new Error('Access denied');
+  
+  // Update session
+  session.activeCompanyId = newCompanyId;
+  session.role = access.role;
+  
+  // All subsequent queries now use new company context
+}
 ```
 
 ### 8.4 API Security
