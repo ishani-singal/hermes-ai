@@ -7,5 +7,14 @@ if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-// Client-side Supabase client (uses publishable key - safe for browser)
-export const supabase = createClient(supabaseUrl, supabasePublishableKey)
+/**
+ * Client-side Supabase client (uses publishable key - safe for browser)
+ * This client automatically handles auth state and sessions via localStorage
+ */
+export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+})

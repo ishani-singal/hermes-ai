@@ -776,7 +776,7 @@ user_companies (junction table for multi-company access)
 ├── id (UUID, PK)
 ├── user_id (UUID, FK → users)
 ├── company_id (UUID, FK → companies)
-├── role (ENUM: admin, technician, viewer)
+├── role (ENUM: admin, editor, viewer)
 ├── is_active (BOOLEAN, DEFAULT true)
 ├── created_at, updated_at
 └── UNIQUE(user_id, company_id)
@@ -860,7 +860,7 @@ invites (optional, for admin invite flow)
 ├── id (UUID, PK)
 ├── company_id (UUID, FK → companies)
 ├── email (VARCHAR)
-├── role (ENUM: admin, technician, viewer)
+├── role (ENUM: admin, editor, viewer)
 ├── token (VARCHAR, UNIQUE)
 ├── expires_at (TIMESTAMP)
 ├── used_at (TIMESTAMP, NULLABLE)
@@ -932,11 +932,11 @@ Users can belong to multiple companies (common for contractors). The `user_compa
 ```sql
 -- Regular employee (John) - works for one company
 INSERT INTO user_companies VALUES
-  ('uc-1', 'john-id', 'acme-corp', 'technician', true);
+  ('uc-1', 'john-id', 'acme-corp', 'editor', true);
 
 -- Contractor (Jane) - works for multiple companies
 INSERT INTO user_companies VALUES
-  ('uc-2', 'jane-id', 'acme-corp', 'technician', true),
+  ('uc-2', 'jane-id', 'acme-corp', 'editor', true),
   ('uc-3', 'jane-id', 'beta-mfg', 'admin', true),
   ('uc-4', 'jane-id', 'gamma-ind', 'viewer', true);
 ```
@@ -1107,12 +1107,6 @@ CREATE POLICY documents_select_policy ON storage.objects
     AND (storage.foldername(name))[1] = (SELECT company_id::text FROM users WHERE id = auth.uid())
   );
 ```
-
----
-# Manufacturing Technician Copilot - Technical Design Document
-## Sections 6-10
-
----
 
 ## 6. API Design
 
@@ -1552,18 +1546,27 @@ POST /api/auth/accept-invite
 **Option B: Self-Registration (Create new company)**
 ```typescript
 // User signs up and creates company
-POST /api/auth/signup
+POST /api/auth/signup/create-company
 {
   email: "admin@newcompany.com",
   password: "...",
   fullName: "Jane Smith",
-  companyName: "ACME Manufacturing",
-  primaryContactEmail: "contact@acme.com",
-  createContactAsAdmin: false  // Optional: Auto-invite contact as admin
+  companyName: "ACME Manufacturing"
 }
 → Creates auth.users + public.users + company + adds creator to user_companies as admin
-→ If createContactAsAdmin=true and primaryContactEmail differs:
-   - Check if user with that email exists
+→ User's email becomes company's primary contact email
+
+// OR join existing company
+POST /api/auth/signup/join-company
+{
+  email: "user@newcompany.com",
+  password: "...",
+  fullName: "John Doe",
+  companyName: "ACME Manufacturing"  // Must match existing company
+}
+→ Creates auth.users + public.users + adds user to user_companies as viewer
+→ Auto-approved (no admin approval needed for MVP)
+```
    - If exists: Add to user_companies as admin
    - If not: Send invite → Becomes admin on acceptance
 ```

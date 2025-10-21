@@ -1,0 +1,148 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import type { SignUpRequest, SignUpResponse } from '@/types'
+
+/**
+ * POST /api/auth/signup/join-company
+ * 
+ * Creates a new user account and adds them to an EXISTING company
+ * Flow:
+ * 1. Validate company exists
+ * 2. Create auth.users via Supabase Auth
+ * 3. Fetch auto-created public.users (from DB trigger)
+ * 4. Create user_companies relationship (viewer role - auto-approved)
+ * 5. Return user + company data
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body: SignUpRequest = await request.json()
+    const { email, password, fullName, companyName } = body
+
+    // Validate required fields
+    if (!email || !password || !fullName || !companyName) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createAdminClient()
+
+    // Step 1: Check if company exists
+    const { data: company, error: companyError } = await supabase
+      .from('companies')
+      .select('*')
+      .ilike('name', companyName)
+      .single()
+
+    if (companyError || !company) {
+      return NextResponse.json(
+        { error: 'Company not found. Please check the spelling or check "Create new company" to create it.' },
+        { status: 404 }
+      )
+    }
+
+    // Step 2: Create auth user
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
+    })
+
+    if (authError || !authData.user) {
+      console.error('Auth signup error:', authError)
+      return NextResponse.json(
+        { error: authError?.message || 'Failed to create user' },
+        { status: 400 }
+      )
+    }
+
+    const userId = authData.user.id
+
+    // Step 3: Fetch auto-created public.users record (from DB trigger)
+    let user = null
+    let attempts = 0
+    const maxAttempts = 5
+
+    while (!user && attempts < maxAttempts) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (userData) {
+        user = userData
+        break
+      }
+
+      if (attempts < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+      
+      attempts++
+    }
+
+    if (!user) {
+      console.error('User record not found after signup')
+      
+      // Cleanup
+      await supabase.auth.admin.deleteUser(userId)
+      
+      return NextResponse.json(
+        { error: 'Failed to create user profile' },
+        { status: 500 }
+      )
+    }
+
+    // Step 4: Add user to company as viewer (auto-approved for MVP)
+    const { error: userCompanyError } = await supabase
+      .from('user_companies')
+      .insert({
+        user_id: userId,
+        company_id: company.id,
+        role: 'viewer', // Start as viewer, admin can upgrade later
+        is_active: true,
+      })
+
+    if (userCompanyError) {
+      console.error('User-company relationship error:', userCompanyError)
+      
+      // Cleanup
+      await supabase.auth.admin.deleteUser(userId)
+      
+      return NextResponse.json(
+        { error: 'Failed to add user to company' },
+        { status: 500 }
+      )
+    }
+
+    // Step 5: Update user's default company
+    await supabase
+      .from('users')
+      .update({ default_company_id: company.id })
+      .eq('id', userId)
+
+    // Step 6: Return success response
+    const response: SignUpResponse = {
+      user: {
+        ...user,
+        default_company_id: company.id,
+      },
+      company,
+    }
+
+    return NextResponse.json(response, { status: 201 })
+
+  } catch (error) {
+    console.error('Join company signup error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

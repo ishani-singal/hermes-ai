@@ -61,26 +61,36 @@ These business rules must be enforced in the **application layer** (API routes) 
 
 ---
 
-### ✅ Task 3: First User is Automatically Admin
+### Task 3: Join Company Requests Require Admin Approval
 
-**Rule:** When a company is created, the creator automatically becomes the first admin
+**Rule:** When a user tries to join an existing company, their request must be approved by a company admin
 
 **Why:**
-- Someone needs to manage the company
-- Creator should have full access
-- Simplifies onboarding flow
+- Prevents unauthorized access to company data
+- Allows companies to control who can view their information
+- Maintains data security and privacy
+
+**Current State:**
+- ✅ Join-company endpoint exists (`app/api/auth/signup/join-company/route.ts`)
+- ⚠️ Currently auto-approves (is_active=true) - needs to be changed
 
 **Implementation:**
-- Location: Company creation/signup endpoint (`app/api/auth/signup/route.ts`)
-- Flow: Create auth user → Create company → Add user_companies with role='admin'
-- Set default_company_id to new company
-- Transaction: Use rollback logic if any step fails (ensure atomicity)
+- Location: Join-company signup endpoint (`app/api/auth/signup/join-company/route.ts`)
+- Change: Set `is_active=false` when creating user_companies record
+- Add: `pending_approval=true` flag to indicate pending state
+- New Endpoint: `app/api/user-companies/[id]/approve/route.ts`
+  - Only accessible by company admins
+  - Updates `is_active=true` and `pending_approval=false`
+- UI: Admin dashboard shows list of pending join requests
+- Notification: Email admin(s) when new join request arrives
 
 **Test Cases:**
-- [ ] New user creates company → Becomes admin
-- [ ] User-company association created with role='admin'
-- [ ] default_company_id set to new company
-- [ ] Failure at any step → Proper rollback
+- [ ] User joins company → user_companies created with is_active=false
+- [ ] Pending user cannot access company data
+- [ ] Admin can see pending join requests
+- [ ] Admin approves request → User gains access
+- [ ] Admin rejects request → User notified, record deleted
+- [ ] Non-admin cannot approve join requests
 
 ---
 
@@ -112,7 +122,8 @@ When admin invites user to existing company:
 
 - **Migration:** `supabase/migrations/20251018225729_initial_schema.sql`
 - **API Routes (to create):**
-  - `app/api/auth/signup/route.ts`
+  - `app/api/auth/signup/create-company/route.ts` ✅
+  - `app/api/auth/signup/join-company/route.ts` ✅
   - `app/api/users/[userId]/route.ts`
   - `app/api/user-companies/[id]/route.ts`
   - `app/api/companies/[companyId]/route.ts`

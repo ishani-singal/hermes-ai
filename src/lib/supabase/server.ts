@@ -1,17 +1,30 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY!
-
-if (!supabaseUrl || !supabaseSecretKey) {
-  throw new Error('Missing Supabase secret key environment variables')
+/**
+ * Creates a Supabase client for server-side use (API routes, server components)
+ * Uses the publishable key - respects RLS policies with user's session
+ */
+export function createClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  )
 }
 
-// Server-side Supabase client (uses secret key - elevated access)
-// WARNING: This bypasses RLS policies. Use only in API routes/server components.
-export const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-})
+/**
+ * Admin client for operations that need to bypass RLS
+ * Uses the secret key - privileged access for system operations
+ * WARNING: Use only when absolutely necessary (e.g., creating user records during signup)
+ */
+export function createAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SECRET_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
+}
