@@ -124,7 +124,7 @@ export default function HomePage() {
           🎉 Your account is set up!
         </h3>
         <p className="text-sm text-blue-700">
-          You've successfully signed in. The chat interface, equipment management, 
+          You&apos;ve successfully signed in. The chat interface, equipment management, 
           and other features will be available here once implemented.
         </p>
       </div>

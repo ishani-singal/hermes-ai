@@ -85,7 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (companiesError) throw companiesError
 
-      setCompanies(companiesData as any)
+      setCompanies(companiesData as (UserCompany & { company: Company })[])
 
       // Set active company (from user's default or first company)
       const storedCompanyId = localStorage.getItem('activeCompanyId')
