@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User as SupabaseUser, Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 import type { User, Company, UserCompany, UserRole } from '@/types'
 
 // ============================================
@@ -47,6 +47,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [companies, setCompanies] = useState<(UserCompany & { company: Company })[]>([])
   const [activeCompanyId, setActiveCompanyIdState] = useState<string | null>(null)
+  
+  // Create Supabase client instance
+  const supabase = createClient()
 
   // Derived state: Get active user's role at active company
   const activeRole: UserRole | null = companies.find(
@@ -87,7 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Set active company (from user's default or first company)
       const storedCompanyId = localStorage.getItem('activeCompanyId')
       
-      if (storedCompanyId && companiesData.some((uc) => uc.company_id === storedCompanyId)) {
+      if (storedCompanyId && companiesData.some((uc: UserCompany) => uc.company_id === storedCompanyId)) {
         setActiveCompanyIdState(storedCompanyId)
       } else if (userData.default_company_id) {
         setActiveCompanyIdState(userData.default_company_id)
@@ -108,7 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
       setSession(session)
       setSupabaseUser(session?.user || null)
       
@@ -122,7 +125,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
       setSession(session)
       setSupabaseUser(session?.user || null)
       

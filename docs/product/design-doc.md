@@ -917,6 +917,219 @@ CREATE INDEX idx_schemas_definition ON schemas USING GIN (schema_definition);
 - AI can extract custom fields during work order creation
 - Examples: cost_estimate, vendor, parts_needed, safety_level
 
+**Schema Mapping & Field Aliasing:**
+
+Companies often use different terminology for the same concepts (e.g., "work order" vs "maintenance task" vs "service request"). Additionally, companies may want to rename standard fields to match their internal vocabulary (e.g., "priority" → "urgency level"). To support this, the `schema_definition` JSONB in the `schemas` table includes both field definitions AND field mappings.
+
+**Schema Definition Structure:**
+
+```typescript
+// Example schema_definition for work_orders entity_type
+{
+  // Entity-level alias (what the company calls this entity)
+  entity_alias: "maintenance_task",  // or "work_order", "service_request", etc.
+  
+  // Field mappings (core + custom fields)
+  fields: [
+    {
+      internal_name: "title",           // Internal DB column name
+      display_name: "Task Summary",     // Customer's preferred label
+      type: "text",
+      required: true,
+      core_field: true                  // Maps to actual DB column
+    },
+    {
+      internal_name: "priority",
+      display_name: "Urgency Level",
+      type: "select",
+      options: ["low", "medium", "high", "critical"],
+      required: true,
+      core_field: true
+    },
+    {
+      internal_name: "cost_estimate",
+      display_name: "Estimated Cost",
+      type: "number",
+      required: false,
+      core_field: false                 // Stored in custom_fields JSONB
+    },
+    {
+      internal_name: "parts_needed",
+      display_name: "Required Parts",
+      type: "multiselect",
+      required: false,
+      core_field: false
+    }
+  ]
+}
+```
+
+**Implementation Pattern:**
+
+```typescript
+interface WorkOrderSchema {
+  entity_alias: string;
+  fields: FieldDefinition[];
+}
+
+interface FieldDefinition {
+  internal_name: string;    // Never changes (DB column or custom_fields key)
+  display_name: string;     // Customer-facing label (customizable)
+  type: string;             // text, number, date, select, multiselect, checkbox, etc.
+  required: boolean;
+  core_field: boolean;      // true = DB column, false = custom_fields JSONB
+  options?: string[];       // For select/multiselect types
+  validation?: any;         // Additional validation rules
+}
+
+class SchemaMapper {
+  private schema: WorkOrderSchema;
+  
+  constructor(companyId: string) {
+    // Load from schemas table
+    this.schema = await this.loadSchema(companyId, 'work_orders');
+  }
+  
+  // Convert DB row → Flattened customer view (for API responses, UI display)
+  toCustomerView(dbRow: WorkOrder): FlattenedWorkOrder {
+    const flattened: Record<string, any> = {};
+    
+    for (const field of this.schema.fields) {
+      const value = field.core_field 
+        ? dbRow[field.internal_name]              // From core column
+        : dbRow.custom_fields?.[field.internal_name];  // From JSONB
+      
+      flattened[field.display_name] = value;
+    }
+    
+    return flattened;
+  }
+  
+  // Convert customer input → DB structure (for API requests, form submissions)
+  toDbStructure(customerData: Record<string, any>): Partial<WorkOrder> {
+    const dbData: any = { custom_fields: {} };
+    
+    for (const field of this.schema.fields) {
+      const value = customerData[field.display_name];
+      
+      if (field.core_field) {
+        dbData[field.internal_name] = value;
+      } else {
+        dbData.custom_fields[field.internal_name] = value;
+      }
+    }
+    
+    return dbData;
+  }
+  
+  // Get entity alias for UI (e.g., page titles, buttons)
+  getEntityAlias(): string {
+    return this.schema.entity_alias;
+  }
+  
+  // Generate UI form schema (for dynamic form generation)
+  getFormSchema(): FormField[] {
+    return this.schema.fields.map(field => ({
+      name: field.display_name,
+      type: field.type,
+      required: field.required,
+      options: field.options
+    }));
+  }
+  
+  // Map CSV column names to internal structure (for bulk import)
+  mapCsvRow(csvRow: Record<string, any>): Partial<WorkOrder> {
+    const mapped: any = { custom_fields: {} };
+    
+    for (const field of this.schema.fields) {
+      // Try to match CSV column to display_name (case-insensitive)
+      const csvValue = Object.entries(csvRow).find(
+        ([key]) => key.toLowerCase() === field.display_name.toLowerCase()
+      )?.[1];
+      
+      if (csvValue !== undefined) {
+        if (field.core_field) {
+          mapped[field.internal_name] = csvValue;
+        } else {
+          mapped.custom_fields[field.internal_name] = csvValue;
+        }
+      }
+    }
+    
+    return mapped;
+  }
+}
+```
+
+**Usage Examples:**
+
+```typescript
+// API Endpoint: GET /api/work-orders
+const mapper = new SchemaMapper(companyId);
+const dbRows = await supabase.from('work_orders').select('*');
+const response = dbRows.map(row => mapper.toCustomerView(row));
+
+// Result:
+[
+  {
+    "Task Summary": "Replace conveyor belt",
+    "Urgency Level": "high",
+    "Estimated Cost": 5000,
+    "Required Parts": ["Belt Assembly", "Mounting Bolts"]
+  }
+]
+
+// API Endpoint: POST /api/work-orders
+const customerInput = {
+  "Task Summary": "Repair hydraulic pump",
+  "Urgency Level": "critical",
+  "Estimated Cost": 12000
+};
+const dbStructure = mapper.toDbStructure(customerInput);
+await supabase.from('work_orders').insert(dbStructure);
+
+// Stored as:
+{
+  title: "Repair hydraulic pump",
+  priority: "critical",
+  custom_fields: {
+    cost_estimate: 12000
+  }
+}
+
+// UI: Dynamic form generation
+const formFields = mapper.getFormSchema();
+// Renders form with "Task Summary", "Urgency Level", etc. as labels
+
+// UI: Page titles
+const entityName = mapper.getEntityAlias(); // "maintenance_task"
+return <h1>Create New {entityName}</h1>;  // "Create New maintenance_task"
+
+// CSV Import
+const csvData = [
+  { "Task Summary": "...", "Urgency Level": "high", "Estimated Cost": 5000 },
+  // ... more rows
+];
+const importData = csvData.map(row => mapper.mapCsvRow(row));
+await supabase.from('work_orders').insert(importData);
+```
+
+**Benefits:**
+
+1. **Unified Interface**: Frontend always works with customer-facing `display_name`, backend handles all mapping
+2. **Flexible Terminology**: Each company can use their own vocabulary without code changes
+3. **CSV Import**: Maps customer CSV columns to internal structure automatically
+4. **AI Integration**: AI can use customer terminology in conversations (e.g., "Create a new maintenance task")
+5. **Backward Compatible**: Existing `custom_fields` JSONB approach still works
+6. **No Schema Migrations**: All configuration stored in `schemas` table
+7. **Type Safety**: Validation performed in application layer via Zod based on schema definition
+
+**Default Behavior:**
+
+- If no schema exists for a company's entity_type, use default field mappings where `display_name = internal_name`
+- Schema can be created during company onboarding or CSV import (auto-generate from CSV headers)
+- Admin users can modify schema via settings UI
+
 **Multi-Company User Access:**
 
 Users can belong to multiple companies (common for contractors). The `user_companies` junction table manages this many-to-many relationship.

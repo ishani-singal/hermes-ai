@@ -1,29 +1,28 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
-/**
- * Creates a Supabase client for server-side use (API routes, server components)
- * Uses the publishable key - respects RLS policies with user's session
- */
-export function createClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
-}
+export async function createClient() {
+  const cookieStore = await cookies()
 
-/**
- * Admin client for operations that need to bypass RLS
- * Uses the secret key - privileged access for system operations
- * WARNING: Use only when absolutely necessary (e.g., creating user records during signup)
- */
-export function createAdminClient() {
-  return createSupabaseClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
       },
     }
   )
