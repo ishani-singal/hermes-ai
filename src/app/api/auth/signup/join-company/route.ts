@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import type { SignUpRequest, SignUpResponse } from '@/types'
 
 /**
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // Step 1: Check if company exists
     const { data: company, error: companyError } = await supabase
