@@ -816,15 +816,38 @@ work_orders
 ├── id (UUID, PK)
 ├── company_id (UUID, FK → companies)
 ├── equipment_id (UUID, FK → equipment, NULLABLE)
-├── title, description
-├── status (ENUM), priority (ENUM)
-├── created_by, assigned_to (FK → users)
-├── due_date, completed_at (nullable)
+├── title (VARCHAR 255, required)
+├── description (TEXT, max 5000 chars)
+├── status (TEXT CHECK: open, in_progress, completed, cancelled)
+├── priority (TEXT CHECK: low, medium, high, critical)
+├── created_by (UUID, FK → users, required)
+├── assigned_to (UUID, FK → users, NULLABLE)
+├── due_date (TIMESTAMPTZ, NULLABLE)
+├── completed_at (TIMESTAMPTZ, NULLABLE)
 ├── custom_fields (JSONB, DEFAULT '{}')
-│   └── Company-specific fields (cost, vendor, parts, etc.)
-│       Schema defined in companies.settings.work_orders.custom_fields_schema
+│   └── Company-specific fields (type, cost, vendor, parts, etc.)
+│       Schema defined in schemas table (company_id, entity_type='work_orders')
+│       Common custom fields: type, cost_estimate, vendor, parts_needed, safety_level
 │       Validated in application layer via Zod
-└── timestamps
+└── timestamps (created_at, updated_at)
+
+work_order_attachments
+├── id (UUID, PK)
+├── work_order_id (UUID, FK → work_orders, ON DELETE CASCADE)
+├── file_url (TEXT, Supabase Storage URL)
+├── file_name (VARCHAR 255)
+├── file_size (INTEGER, bytes)
+├── file_type (VARCHAR 100, mime type)
+├── uploaded_by (UUID, FK → users, ON DELETE SET NULL)
+└── created_at (TIMESTAMPTZ)
+
+work_order_conversations
+├── id (UUID, PK)
+├── work_order_id (UUID, FK → work_orders, ON DELETE CASCADE)
+├── conversation_session_id (UUID, FK → conversation_sessions, ON DELETE CASCADE)
+├── relationship_type (TEXT CHECK: created, updated, discussed)
+├── created_at (TIMESTAMPTZ)
+└── UNIQUE(work_order_id, conversation_session_id)
 
 documents
 ├── id (UUID, PK)
@@ -870,9 +893,33 @@ invites (optional, for admin invite flow)
 
 **Indexes (Performance):**
 ```sql
--- Frequently queried fields
+-- Work Orders: Foreign key indexes (critical for JOINs and RLS performance)
 CREATE INDEX idx_work_orders_company ON work_orders(company_id);
+CREATE INDEX idx_work_orders_equipment ON work_orders(equipment_id);
+CREATE INDEX idx_work_orders_created_by ON work_orders(created_by);
+CREATE INDEX idx_work_orders_assigned_to ON work_orders(assigned_to);
+
+-- Work Orders: Status filtering (very common query)
 CREATE INDEX idx_work_orders_status ON work_orders(status);
+
+-- Work Orders: Composite indexes for common query patterns
+CREATE INDEX idx_work_orders_company_status ON work_orders(company_id, status);
+CREATE INDEX idx_work_orders_assigned_status ON work_orders(assigned_to, status) 
+  WHERE assigned_to IS NOT NULL;
+
+-- Work Orders: Date-based queries
+CREATE INDEX idx_work_orders_due_date ON work_orders(due_date) 
+  WHERE due_date IS NOT NULL AND status != 'completed';
+
+-- Work Order Attachments
+CREATE INDEX idx_work_order_attachments_work_order ON work_order_attachments(work_order_id);
+CREATE INDEX idx_work_order_attachments_uploaded_by ON work_order_attachments(uploaded_by);
+
+-- Work Order Conversations
+CREATE INDEX idx_wo_conversations_work_order ON work_order_conversations(work_order_id);
+CREATE INDEX idx_wo_conversations_session ON work_order_conversations(conversation_session_id);
+
+-- Other entities
 CREATE INDEX idx_equipment_company ON equipment(company_id);
 CREATE INDEX idx_documents_company ON documents(company_id);
 CREATE INDEX idx_messages_session ON conversation_messages(session_id);
@@ -915,7 +962,34 @@ CREATE INDEX idx_schemas_definition ON schemas USING GIN (schema_definition);
 - Enables CSV import from existing CMMS systems
 - Dynamic UI form generation based on company schema
 - AI can extract custom fields during work order creation
-- Examples: cost_estimate, vendor, parts_needed, safety_level
+- Examples: type, cost_estimate, vendor, parts_needed, safety_level
+
+**Work Order Type Field:**
+Work order "type" (e.g., "Emergency Maintenance", "Preventive Maintenance", "Inspection") is intentionally NOT a core column. Instead:
+- Default `type` field automatically included in all company schemas for `work_orders` entity
+- Values stored in `work_orders.custom_fields.type`
+- Companies can customize the options and display name to match their terminology
+- AI learns each company's specific types from their schema definition
+- Supports CSV import with company-specific type values
+- No "other" bucket needed - full flexibility per company
+
+**Default type field** (automatically added to new companies):
+```json
+{
+  "internal_name": "type",
+  "display_name": "Work Order Type",
+  "type": "select",
+  "required": false,
+  "core_field": false,
+  "options": ["Corrective", "Preventive", "Inspection", "Emergency", "Project"]
+}
+```
+
+Companies can customize by:
+- Changing display name (e.g., "Maintenance Type", "Work Category")
+- Modifying options (e.g., ["PM", "CM", "Emergency", "Upgrade"])
+- Making it required or optional
+- Or removing it entirely if not needed
 
 **Schema Mapping & Field Aliasing:**
 
@@ -1185,13 +1259,31 @@ const needsSwitcher = userCompanies.length > 1;
 
 ### 5.2 Row-Level Security (RLS)
 
+**RLS Strategy Overview:**
+
+The application uses a **phased approach** to RLS policies, balancing security with development velocity:
+
+**MVP Phase (Single Admin per Company):**
+- READ policies: All authenticated users can view their company's data
+- WRITE policies: Admin-only (INSERT/UPDATE/DELETE restricted to role='admin')
+- API uses user session (`createServerClient`) with RLS enforcement
+- No complex permission logic needed in API layer
+- Fast development for pilot customers
+
+**Post-MVP Phase (Multi-user Companies):**
+- Option 1: Add granular RLS policies for different roles and field-level permissions
+- Option 2: Switch API to service role key + custom permission system in application layer
+- Enables complex workflows (e.g., users can update status but only admins can assign)
+
 **Supabase RLS Policies:**
 
 ```sql
--- Users can only see data for their active company
--- Note: activeCompanyId is stored in session/context, not in users table
+-- =============================================
+-- EQUIPMENT (Example - similar pattern for all tables)
+-- =============================================
 ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
 
+-- READ: All company members can view
 CREATE POLICY equipment_select_policy ON equipment
   FOR SELECT
   USING (
@@ -1201,6 +1293,7 @@ CREATE POLICY equipment_select_policy ON equipment
     )
   );
 
+-- WRITE: Admin-only (MVP approach)
 CREATE POLICY equipment_insert_policy ON equipment
   FOR INSERT
   WITH CHECK (
@@ -1212,8 +1305,127 @@ CREATE POLICY equipment_insert_policy ON equipment
     )
   );
 
--- Similar policies for work_orders, documents, etc.
--- Note: Role-based access is enforced through user_companies.role
+-- =============================================
+-- WORK ORDERS (Detailed policies)
+-- =============================================
+ALTER TABLE work_orders ENABLE ROW LEVEL SECURITY;
+
+-- READ: All company members
+CREATE POLICY work_orders_select_policy ON work_orders
+  FOR SELECT
+  USING (
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() AND is_active = true
+    )
+  );
+
+-- WRITE: Admin-only (MVP)
+CREATE POLICY work_orders_insert_admin_policy ON work_orders
+  FOR INSERT
+  WITH CHECK (
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() 
+        AND is_active = true 
+        AND role = 'admin'
+    )
+    AND created_by = auth.uid()
+  );
+
+CREATE POLICY work_orders_update_admin_policy ON work_orders
+  FOR UPDATE
+  USING (
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() 
+        AND is_active = true 
+        AND role = 'admin'
+    )
+  );
+
+CREATE POLICY work_orders_delete_admin_policy ON work_orders
+  FOR DELETE
+  USING (
+    company_id IN (
+      SELECT company_id FROM user_companies 
+      WHERE user_id = auth.uid() 
+        AND is_active = true 
+        AND role = 'admin'
+    )
+  );
+
+-- Similar admin-only policies for:
+-- - work_order_attachments
+-- - work_order_conversations
+-- - documents, document_chunks
+-- - conversation_sessions, conversation_messages
+```
+
+**API Implementation Pattern (MVP):**
+```typescript
+// API routes use user session (subject to RLS)
+import { createServerClient } from '@supabase/ssr';
+
+export async function POST(request: Request) {
+  const supabase = createServerClient(cookies());
+  
+  // No permission checks needed - RLS handles it
+  // If user is not admin, RLS will block the operation
+  const { data, error } = await supabase
+    .from('work_orders')
+    .insert(await request.json())
+    .select()
+    .single();
+  
+  if (error) return Response.json({ error }, { status: 400 });
+  return Response.json(data);
+}
+```
+
+**Post-MVP Evolution:**
+```typescript
+// Option: Switch to service role + custom permissions
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // Bypasses RLS
+);
+
+export async function PATCH(request: Request) {
+  const supabase = createServerClient(cookies());
+  const user = await supabase.auth.getUser();
+  const updates = await request.json();
+  
+  // Custom permission logic
+  const userRole = await getUserRole(user.id);
+  
+  // Field-level permissions
+  if (updates.assigned_to && userRole !== 'admin') {
+    return Response.json(
+      { error: 'Only admins can assign work orders' }, 
+      { status: 403 }
+    );
+  }
+  
+  if (updates.status === 'completed') {
+    // Users can complete their own work orders
+    const workOrder = await getWorkOrder(params.id);
+    if (workOrder.assigned_to !== user.id && userRole !== 'admin') {
+      return Response.json(
+        { error: 'Can only complete your own work orders' },
+        { status: 403 }
+      );
+    }
+  }
+  
+  // Use service role to bypass RLS
+  return supabaseAdmin
+    .from('work_orders')
+    .update(updates)
+    .eq('id', params.id);
+}
 ```
 
 ### 5.3 Vector Storage (Pinecone)
