@@ -1,4 +1,4 @@
-'use client'
+ 'use client'
 
 import { ReactNode } from 'react'
 import { useAuth } from '@/lib/auth/context'
@@ -34,9 +34,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex justify-between items-center h-16">
             {/* Logo/Brand */}
             <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">
-                Technician Assistant
-              </h1>
+              <h1 className="text-xl font-bold text-gray-900">Technician Assistant</h1>
             </div>
 
             {/* User Menu */}
@@ -46,9 +44,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
     </div>
   )
 }

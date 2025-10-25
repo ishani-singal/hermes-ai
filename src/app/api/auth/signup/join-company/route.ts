@@ -10,7 +10,7 @@ import type { SignUpRequest, SignUpResponse } from '@/types'
  * 1. Validate company exists
  * 2. Create auth.users via Supabase Auth
  * 3. Fetch auto-created public.users (from DB trigger)
- * 4. Create user_companies relationship (viewer role - auto-approved)
+ * 4. Create user_companies relationship (user role - auto-approved)
  * 5. Return user + company data
  */
 export async function POST(request: NextRequest) {
@@ -99,13 +99,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 4: Add user to company as viewer (auto-approved for MVP)
+    // Step 4: Add user to company as user (auto-approved for MVP)
     const { error: userCompanyError } = await supabase
       .from('user_companies')
       .insert({
         user_id: userId,
         company_id: company.id,
-        role: 'viewer', // Start as viewer, admin can upgrade later
+        role: 'user', // Start as user for MVP, admin can upgrade later
         is_active: true,
       })
 

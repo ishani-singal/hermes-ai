@@ -60,6 +60,14 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // If authenticated user visits the public root, redirect to /dashboard
+  // so authenticated users open the app directly without seeing the landing page.
+  if (user && pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
   // IMPORTANT: You *must* return the supabaseResponse object as it is.
   return supabaseResponse
 }
