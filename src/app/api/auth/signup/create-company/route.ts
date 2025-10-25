@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     const maxAttempts = 5
 
     while (!user && attempts < maxAttempts) {
-      const { data: userData, error: userError } = await supabase
+      const { data: userData } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)

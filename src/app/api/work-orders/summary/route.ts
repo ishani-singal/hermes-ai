@@ -6,7 +6,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createScopedServiceRoleClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest } from '@/lib/auth/middleware';
 import type { WorkOrderSummary } from '@/types';
@@ -20,12 +20,13 @@ export const GET = route()
     const assigned_to = searchParams.get('assigned_to') || undefined;
     const equipment_id = searchParams.get('equipment_id') || undefined;
 
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    const supabase = createServiceRoleClient();
 
-    // Base query - company_id automatically filtered
+    // Base query with explicit company_id filter
     let baseQuery = supabase
       .from('work_orders')
-      .select('status, priority, due_date, assigned_to');
+      .select('status, priority, due_date, assigned_to')
+      .eq('company_id', user!.companyId);
 
     // Apply filters if provided
     if (assigned_to) {

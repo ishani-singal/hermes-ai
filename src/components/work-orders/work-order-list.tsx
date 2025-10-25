@@ -15,7 +15,7 @@ export interface WorkOrderListProps {
 }
 
 export function WorkOrderList({ onCreateClick, onWorkOrderClick }: WorkOrderListProps) {
-  const { user, companies, activeCompanyId } = useAuth()
+  const { companies, activeCompanyId } = useAuth()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

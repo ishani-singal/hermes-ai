@@ -1,7 +1,8 @@
 import { HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
-export interface CardProps extends HTMLAttributes<HTMLDivElement> {}
+// Use a type alias instead of an empty interface to satisfy the linter rule
+export type CardProps = HTMLAttributes<HTMLDivElement>
 
 export function Card({ className, ...props }: CardProps) {
   return (

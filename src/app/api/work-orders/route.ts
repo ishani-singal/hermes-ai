@@ -6,7 +6,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createScopedServiceRoleClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, forbidden } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
@@ -46,13 +46,14 @@ export const GET = route()
       limit: Math.min(parseInt(searchParams.get('limit') || '25', 10), 100),
     };
 
-    // Use scoped service role client - automatically filters by company_id
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    // Use service role client
+    const supabase = createServiceRoleClient();
 
     // Build query
     let query = supabase
       .from('work_orders')
-      .select('*', { count: 'exact' });
+      .select('*', { count: 'exact' })
+      .eq('company_id', user!.companyId);
 
     // Apply filters
     if (filters.status) {
@@ -155,13 +156,14 @@ export const POST = route()
       return forbidden('Only admins can assign work orders to users');
     }
 
-    // Use scoped service role client - automatically injects company_id
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    // Use service role client with explicit company_id injection
+    const supabase = createServiceRoleClient();
 
-    // Insert work order (company_id will be auto-injected)
+    // Insert work order (must explicitly add company_id)
     const { data, error } = await supabase
       .from('work_orders')
       .insert({
+        company_id: user!.companyId,
         created_by: user!.id,
         title: body.title,
         description: body.description || null,

@@ -6,10 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { WorkOrder, WorkOrderStatus, WorkOrderPriority, UpdateWorkOrderRequest } from '@/types'
 import { useAuth } from '@/lib/auth/context'
-import { Calendar, User, Clock } from 'lucide-react'
+import { Clock } from 'lucide-react'
 
 export interface WorkOrderDetailProps {
   workOrder: WorkOrder | null
@@ -41,7 +40,16 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const [formData, setFormData] = useState<UpdateWorkOrderRequest>({})
+  // Initialize with defaults so inputs are controlled from first render
+  const [formData, setFormData] = useState<UpdateWorkOrderRequest>({
+    title: '',
+    description: '',
+    status: 'open',
+    priority: 'medium',
+    due_date: '',
+    equipment_id: '',
+    assigned_to: '',
+  })
 
   // Reset form when work order changes
   useEffect(() => {
@@ -250,47 +258,48 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons (when editing: submit buttons stay inside the form) */}
+        {isEditing && (
+          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              isLoading={isSubmitting}
+              disabled={isSubmitting}
+            >
+              Save Changes
+            </Button>
+          </div>
+        )}
+      </form>
+
+      {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
+      {!isEditing && (
         <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
-          {!isEditing ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Close
-              </Button>
-              {canEdit && (
-                <Button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                >
-                  Edit
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleCancel}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                isLoading={isSubmitting}
-                disabled={isSubmitting}
-              >
-                Save Changes
-              </Button>
-            </>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Close
+          </Button>
+          {canEdit && (
+            <Button
+              type="button"
+              onClick={() => setIsEditing(true)}
+            >
+              Edit
+            </Button>
           )}
         </div>
-      </form>
+      )}
     </Dialog>
   )
 }

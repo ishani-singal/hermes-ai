@@ -52,7 +52,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Tab Navigation */}
-      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId as any)} />
+      <Tabs
+        tabs={tabs}
+        activeTab={activeTab}
+        // onTabChange receives a string; cast to the specific union type we use for state
+        onTabChange={(tabId) => setActiveTab(tabId as 'chat' | 'work-orders')}
+      />
 
       {/* Tab Content */}
       <div className="pt-4">

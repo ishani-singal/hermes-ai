@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createScopedServiceRoleClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, notFound } from '@/lib/auth/middleware';
 import type { WorkOrder } from '@/types';
@@ -21,12 +21,13 @@ export const GET = route()
   .requireCompanyAccess('work_orders')
   .handle(async (request: NextRequest, context: RouteContext) => {
     const { user, params } = context;
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    const supabase = createServiceRoleClient();
 
     const { data, error } = await supabase
       .from('work_orders')
       .select('*')
       .eq('id', params.id)
+      .eq('company_id', user!.companyId)
       .single();
 
     if (error || !data) {
@@ -47,16 +48,16 @@ export const PATCH = route()
   .handle(async (request: NextRequest, context: RouteContext) => {
     const { user, params, body } = context;
 
-    // Use scoped service role client - automatically filters by company_id
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    // Use service role client
+    const supabase = createServiceRoleClient();
 
-    // Perform update
     const { data, error } = await supabase
       .from('work_orders')
       .update(body)
       .eq('id', params.id)
+      .eq('company_id', user!.companyId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error updating work order:', error);
@@ -80,12 +81,13 @@ export const DELETE = route()
   .requireCompanyAccess('work_orders')
   .handle(async (request: NextRequest, context: RouteContext) => {
     const { user, params } = context;
-    const supabase = createScopedServiceRoleClient(user!.companyId);
+    const supabase = createServiceRoleClient();
 
     const { error } = await supabase
       .from('work_orders')
       .delete()
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .eq('company_id', user!.companyId);
 
     if (error) {
       console.error('Error deleting work order:', error);
