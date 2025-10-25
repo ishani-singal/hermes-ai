@@ -1,0 +1,184 @@
+/**
+ * POST /api/work-orders - Create a new work order
+ * GET /api/work-orders - List work orders with filtering
+ * 
+ * Authorization: Authenticated users (admin + user)
+ */
+
+import { NextRequest } from 'next/server';
+import { createScopedServiceRoleClient } from '@/lib/supabase/server';
+import { route, type RouteContext } from '@/lib/auth/route-builder';
+import { success, badRequest, forbidden } from '@/lib/auth/middleware';
+import * as helpers from '@/lib/auth/helpers';
+import type {
+  CreateWorkOrderRequest,
+  WorkOrder,
+  WorkOrderListFilters,
+  WorkOrderListResponse,
+  WorkOrderStatus,
+  WorkOrderPriority,
+} from '@/types';
+
+// =============================================
+// GET - List Work Orders
+// =============================================
+
+export const GET = route()
+  .auth()
+  .handle(async (request: NextRequest, context: RouteContext) => {
+    const { user } = context;
+
+    // Parse query parameters
+    const { searchParams } = new URL(request.url);
+
+    const filters: WorkOrderListFilters = {
+      status: (searchParams.get('status') as WorkOrderStatus) || undefined,
+      priority: (searchParams.get('priority') as WorkOrderPriority) || undefined,
+      assigned_to: searchParams.get('assigned_to') || undefined,
+      equipment_id: searchParams.get('equipment_id') || undefined,
+      created_by: searchParams.get('created_by') || undefined,
+      due_before: searchParams.get('due_before') || undefined,
+      due_after: searchParams.get('due_after') || undefined,
+      search: searchParams.get('search') || undefined,
+      sort: (searchParams.get('sort') as 'created_at' | 'updated_at' | 'due_date' | 'priority') || 'created_at',
+      order: (searchParams.get('order') as 'asc' | 'desc') || 'desc',
+      page: parseInt(searchParams.get('page') || '1', 10),
+      limit: Math.min(parseInt(searchParams.get('limit') || '25', 10), 100),
+    };
+
+    // Use scoped service role client - automatically filters by company_id
+    const supabase = createScopedServiceRoleClient(user!.companyId);
+
+    // Build query
+    let query = supabase
+      .from('work_orders')
+      .select('*', { count: 'exact' });
+
+    // Apply filters
+    if (filters.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters.priority) {
+      query = query.eq('priority', filters.priority);
+    }
+    if (filters.assigned_to) {
+      query = query.eq('assigned_to', filters.assigned_to);
+    }
+    if (filters.equipment_id) {
+      query = query.eq('equipment_id', filters.equipment_id);
+    }
+    if (filters.created_by) {
+      query = query.eq('created_by', filters.created_by);
+    }
+    if (filters.due_before) {
+      query = query.lte('due_date', filters.due_before);
+    }
+    if (filters.due_after) {
+      query = query.gte('due_date', filters.due_after);
+    }
+    if (filters.search) {
+      // Simple text search in title and description
+      query = query.or(
+        `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
+      );
+    }
+
+    // Apply sorting
+    const ascending = filters.order === 'asc';
+    query = query.order(filters.sort!, { ascending });
+
+    // Apply pagination
+    const from = (filters.page! - 1) * filters.limit!;
+    const to = from + filters.limit! - 1;
+    query = query.range(from, to);
+
+    // Execute query
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Error listing work orders:', error);
+      return badRequest(error.message);
+    }
+
+    const response: WorkOrderListResponse = {
+      data: data || [],
+      pagination: {
+        page: filters.page!,
+        limit: filters.limit!,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / filters.limit!),
+      },
+      filters,
+    };
+
+    return success(response);
+  });
+
+// =============================================
+// POST - Create Work Order
+// =============================================
+
+export const POST = route()
+  .auth()
+  .handle(async (request: NextRequest, context: RouteContext) => {
+    const { user } = context;
+
+    // Check if user can create work orders
+    if (!helpers.canPerformAction(user!, 'create', 'work_orders')) {
+      return forbidden('You do not have permission to create work orders');
+    }
+
+    // Parse request body
+    const body: CreateWorkOrderRequest = await request.json();
+
+    // Validate required fields
+    if (!body.title || body.title.trim().length === 0) {
+      return badRequest('Title is required');
+    }
+
+    if (body.title.length > 255) {
+      return badRequest('Title must be 255 characters or less');
+    }
+
+    if (body.description && body.description.length > 5000) {
+      return badRequest('Description must be 5000 characters or less');
+    }
+
+    // Validate priority
+    const validPriorities = ['low', 'medium', 'high', 'critical'];
+    if (body.priority && !validPriorities.includes(body.priority)) {
+      return badRequest(`Priority must be one of: ${validPriorities.join(', ')}`);
+    }
+
+    // If user is not admin, they cannot assign to others
+    if (body.assigned_to && !helpers.isAdmin(user!)) {
+      return forbidden('Only admins can assign work orders to users');
+    }
+
+    // Use scoped service role client - automatically injects company_id
+    const supabase = createScopedServiceRoleClient(user!.companyId);
+
+    // Insert work order (company_id will be auto-injected)
+    const { data, error } = await supabase
+      .from('work_orders')
+      .insert({
+        created_by: user!.id,
+        title: body.title,
+        description: body.description || null,
+        equipment_id: body.equipment_id || null,
+        assigned_to: body.assigned_to || null,
+        priority: body.priority || 'medium',
+        due_date: body.due_date || null,
+        custom_fields: body.custom_fields || {},
+        status: 'open', // Always starts as open
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating work order:', error);
+      return badRequest(error.message);
+    }
+
+    return success<WorkOrder>(data, 201);
+  });

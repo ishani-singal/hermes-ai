@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User as SupabaseUser, Session } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
+import { createBrowserClient } from '@/lib/supabase/client'
 import type { User, Company, UserCompany, UserRole } from '@/types'
 
 // ============================================
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [activeCompanyId, setActiveCompanyIdState] = useState<string | null>(null)
   
   // Create Supabase client instance
-  const supabase = createClient()
+  const supabase = createBrowserClient()
 
   // Derived state: Get active user's role at active company
   const activeRole: UserRole | null = companies.find(

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import type { SignUpRequest, SignUpResponse } from '@/types'
 
 /**
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use admin client to bypass RLS for signup operations
-    const supabase = createAdminClient()
+    const supabase = createServiceRoleClient()
 
     // Check if company name already exists
     const { data: existingCompany } = await supabase
