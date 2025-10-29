@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth/context'
 import { Tabs } from '@/components/tabs/tab-navigation'
-import { ChatPlaceholder } from '@/components/chat/chat-placeholder'
+import { Chat } from '@/components/chat/chat'
 import { WorkOrderList } from '@/components/work-orders/work-order-list'
 import { WorkOrderCreateForm } from '@/components/work-orders/work-order-create-form'
 import { WorkOrderDetail } from '@/components/work-orders/work-order-detail'
@@ -44,24 +44,20 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Welcome Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Welcome back, {user?.full_name}!</h1>
-        <p className="mt-1 text-sm text-gray-500">Manage your work orders and chat with AI assistant</p>
+    <div className="flex flex-col h-full">
+      {/* Tab Navigation - Centered at top */}
+      <div className="flex justify-center border-b border-gray-200 bg-white">
+        <Tabs
+          tabs={tabs}
+          activeTab={activeTab}
+          // onTabChange receives a string; cast to the specific union type we use for state
+          onTabChange={(tabId) => setActiveTab(tabId as 'chat' | 'work-orders')}
+        />
       </div>
 
-      {/* Tab Navigation */}
-      <Tabs
-        tabs={tabs}
-        activeTab={activeTab}
-        // onTabChange receives a string; cast to the specific union type we use for state
-        onTabChange={(tabId) => setActiveTab(tabId as 'chat' | 'work-orders')}
-      />
-
-      {/* Tab Content */}
-      <div className="pt-4">
-        {activeTab === 'chat' && <ChatPlaceholder />}
+      {/* Tab Content - Full height on mobile */}
+      <div className="flex-1 overflow-auto pt-6">
+        {activeTab === 'chat' && <Chat />}
         {activeTab === 'work-orders' && (
           <WorkOrderList key={refreshTrigger} onCreateClick={() => setIsCreateModalOpen(true)} onWorkOrderClick={setSelectedWorkOrder} />
         )}
