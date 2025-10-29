@@ -8,10 +8,17 @@ import { RuntimeContext } from '@mastra/core/runtime-context';
 
 /**
  * Get the base URL for API calls
+ * Uses INTERNAL_API_BASE_URL for server-to-server communication to avoid external network issues
  */
 function getBaseUrl(runtimeContext: RuntimeContext): string {
-  const origin = runtimeContext.get('origin');
-  return String(origin || process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || 'http://localhost:3002');
+  const baseUrl = runtimeContext.get('baseUrl');
+
+  if (baseUrl) {
+    return String(baseUrl);
+  }
+  
+  // Fallback to environment variable or localhost
+  return process.env.INTERNAL_API_BASE_URL || 'http://localhost:3000';
 }
 
 /**

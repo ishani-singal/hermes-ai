@@ -18,14 +18,17 @@ export const POST = route()
         return badRequest('message string required');
       }
 
-      // Determine origin for absolute URL construction
-      const origin = new URL(request.url).origin || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001';
+      
+      // Use internal API BASE URL for server-to-server calls (tools making fetch requests back to our API)
+      // In production on Render: http://localhost:10000
+      // In development: http://localhost:3000
+      const baseUrl = process.env.INTERNAL_API_BASE_URL;
 
       // runtimeContext: put small, serializable objects here
       const runtimeContext = new RuntimeContext();
       runtimeContext.set('user', user);
       runtimeContext.set('cookie', request.headers.get('cookie') || '');
-      runtimeContext.set('origin', origin);
+      runtimeContext.set('baseUrl', baseUrl);
 
       // Get the agent from the mastra instance
       const agent = mastra.getAgent('technicianAgent');
