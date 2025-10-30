@@ -66,7 +66,7 @@ export const technicianAgent = new Agent({
   memory: new Memory({
     // Storage configuration
     storage: new PostgresStore({
-      connectionString: process.env.DATABASE_URL_TRANSACTION_POOLER || '',
+      connectionString: process.env.SUPABASE_TRANSACTION_POOLER_DATABASE_URL || '',
     }),
     // Vector store for future semantic recall (without pgvector extension requirement)
     // vector: new PgVector({
