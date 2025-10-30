@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth/context'
 import { Tabs } from '@/components/tabs/tab-navigation'
-import { Chat } from '@/components/chat/chat'
+import { Chat, type Message } from '@/components/chat/chat'
 import { WorkOrderList } from '@/components/work-orders/work-order-list'
 import { WorkOrderCreateForm } from '@/components/work-orders/work-order-create-form'
 import { WorkOrderDetail } from '@/components/work-orders/work-order-detail'
@@ -16,6 +16,10 @@ export default function DashboardPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  
+  // Lift chat state to dashboard to persist across tab switches
+  const [chatMessages, setChatMessages] = useState<Message[]>([])
+  const [chatThreadId, setChatThreadId] = useState<string | null>(null)
 
   // Loading state
   if (isLoading) {
@@ -57,7 +61,14 @@ export default function DashboardPage() {
 
       {/* Tab Content - Full height on mobile */}
       <div className="flex-1 overflow-auto pt-6">
-        {activeTab === 'chat' && <Chat />}
+        {activeTab === 'chat' && (
+          <Chat 
+            messages={chatMessages} 
+            setMessages={setChatMessages} 
+            threadId={chatThreadId} 
+            setThreadId={setChatThreadId} 
+          />
+        )}
         {activeTab === 'work-orders' && (
           <WorkOrderList key={refreshTrigger} onCreateClick={() => setIsCreateModalOpen(true)} onWorkOrderClick={setSelectedWorkOrder} />
         )}

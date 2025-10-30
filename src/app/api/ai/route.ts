@@ -4,6 +4,7 @@ import { success, badRequest } from '../../../lib/auth/middleware';
 import { mastra } from '../../../mastra';
 import { RuntimeContext } from '@mastra/core/runtime-context';
 
+
 // POST /api/ai — requires auth so we have user context for any actions
 export const POST = route()
   .auth()
@@ -12,7 +13,7 @@ export const POST = route()
       const { user } = context;
 
       const body = await request.json();
-      const { message } = body;
+      const { message, threadId, resourceId } = body;
 
       if (!message || typeof message !== 'string') {
         return badRequest('message string required');
@@ -33,23 +34,34 @@ export const POST = route()
       // Get the agent from the mastra instance
       const agent = mastra.getAgent('technicianAgent');
 
-      // Call the agent with the user message
-      console.log('[api/ai] calling agent.generate, message length:', typeof message === 'string' ? message.length : 0)
-      // Pass serialized runtimeContext to improve tool-context propagation
-      // cast to any to satisfy TypeScript typings for Mastra API while ensuring
-      // the runtimeContext is serialized for tool propagation at runtime.
-      const response = await agent.generate(message, 
-        { runtimeContext: runtimeContext });
-      console.log('[api/ai] agent response:', response)
+      // If no threadId provided, generate one for this new conversation
+      // This allows frontend to maintain conversation context across messages
+      const conversationThreadId = threadId || `thread_${user?.id}_${Date.now()}`;
 
+      // Call the agent with the user message and memory context
+      console.log('[api/ai] calling agent.generate, message length:', message.length, 'threadId:', conversationThreadId)
+      
+      const response = await agent.generate(message, 
+        { 
+          runtimeContext: runtimeContext,
+          memory: {
+            resource: resourceId || user?.id,
+            thread: conversationThreadId,
+          }
+        });
+      
+      console.log('[api/ai] agent response text length:', response.text.length)
+      
       return success({ 
         assistant: {
           text: response.text,
           action: null,
         },
+        // Return threadId so frontend can send it in subsequent messages
+        threadId: conversationThreadId,
       });
     } catch (err: unknown) {
       console.error('AI route error:', err);
       return badRequest(String(err));
     }
-});
+  });

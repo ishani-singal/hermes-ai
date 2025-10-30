@@ -1,4 +1,6 @@
 import { Agent } from '@mastra/core/agent';
+import { Memory } from '@mastra/memory';
+import { PostgresStore } from '@mastra/pg';
 import {
   listWorkOrdersTool,
   getWorkOrderTool,
@@ -39,12 +41,17 @@ Be concise, ask one clarifying question at a time when needed, and help create o
    - Use list-wo-tool with optional filters (search, status, priority)
    - Always format the results with format-wo-tool before showing to the user
 
-5. **Be Helpful:**
+5. **Use Working Memory:**
+   - Track important context like the current work order being discussed (ID, title, status)
+   - Remember user preferences and ongoing tasks across the conversation
+   - Use this context to provide more relevant and personalized responses
+
+6. **Be Helpful:**
    - Ask clarifying questions if information is missing
    - Provide concise, friendly responses
    - Guide users through multi-step operations`;
 
-// Create the technician assistant agent with Mastra
+// Create the technician assistant agent with Mastra Memory
 export const technicianAgent = new Agent({
   name: 'technicianAgent',
   instructions: SYSTEM_PROMPT,
@@ -56,4 +63,36 @@ export const technicianAgent = new Agent({
     updateWO: updateWorkOrderTool,
     formatWO: formatWorkOrdersTool,
   },
+  memory: new Memory({
+    // Storage configuration
+    storage: new PostgresStore({
+      connectionString: process.env.DATABASE_URL_TRANSACTION_POOLER || '',
+    }),
+    // Vector store for future semantic recall (without pgvector extension requirement)
+    // vector: new PgVector({
+    //  connectionString: process.env.DATABASE_URL || '',
+    // }),
+    // TODO: Add embedder when enabling semantic recall
+    // embedder: fastembed,
+    options: {
+      // Keep last 10 messages for conversation context
+      lastMessages: 10,
+      
+      // Working memory enabled with thread scope
+      // This allows the agent to remember important context within each conversation thread
+      workingMemory: {
+        enabled: true,
+        scope: 'thread', // Memory isolated per conversation thread
+      },
+      
+      // Auto-generate thread titles from the first user message
+      threads: {
+        generateTitle: true,
+      },
+      
+      // TODO: Semantic recall will be added in the future
+      // Requires embedder configuration above
+      semanticRecall: false,
+    },
+  }),
 });

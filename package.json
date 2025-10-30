@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@mastra/core": "^0.23.1",
+    "@mastra/memory": "^0.15.10",
+    "@mastra/pg": "^0.17.7",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.75.1",
     "class-variance-authority": "^0.7.1",

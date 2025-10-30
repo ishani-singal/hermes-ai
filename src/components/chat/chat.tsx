@@ -5,28 +5,37 @@ import { MessageCircle, Send, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-type Message = {
+export type Message = {
   id: string
   role: 'user' | 'assistant' | 'system'
   text: string
 }
 
-export function Chat() {
-  const [messages, setMessages] = useState<Message[]>([])
+type ChatProps = {
+  messages: Message[]
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>
+  threadId: string | null
+  setThreadId: React.Dispatch<React.SetStateAction<string | null>>
+}
+
+export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
+  // Initialize with welcome message only if messages are empty
   useEffect(() => {
-    // simple welcome/system message
-    setMessages([
-      {
-        id: 'm-system-1',
-        role: 'system',
-        text: 'Ask me about maintenance procedures, troubleshooting, or equipment details. I can act on your behalf if needed.',
-      },
-    ])
+    if (messages.length === 0) {
+      setMessages([
+        {
+          id: 'm-system-1',
+          role: 'system',
+          text: 'Ask me about maintenance procedures, troubleshooting, or equipment details. I can act on your behalf if needed.',
+        },
+      ])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -55,7 +64,10 @@ export function Chat() {
         headers: { 'Content-Type': 'application/json' },
         // include cookies so backend auth middleware receives user context
         credentials: 'include',
-        body: JSON.stringify({ message: messageText }),
+        body: JSON.stringify({ 
+          message: messageText,
+          threadId: threadId || undefined,
+        }),
       })
 
       if (!res.ok) {
@@ -64,6 +76,13 @@ export function Chat() {
       }
 
       const json = await res.json()
+
+      // Extract threadId from response and save it in state only (not localStorage)
+      // This keeps the conversation context within the session, but doesn't persist across page reloads
+      const responseThreadId = json?.data?.threadId || json?.threadId
+      if (responseThreadId && responseThreadId !== threadId) {
+        setThreadId(responseThreadId)
+      }
 
       // backend success shape may vary; prefer known shapes and fallback to raw
       const assistantText =
