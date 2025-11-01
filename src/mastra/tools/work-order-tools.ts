@@ -121,21 +121,31 @@ function formatWorkOrdersAsTable(workOrders: Array<Record<string, unknown>>): st
   }
 
   let table = '## Work Orders\n\n';
-  table += '| Title | Status | Priority | Due Date | Assigned To | Created |\n';
-  table += '|-------|--------|----------|----------|-------------|----------|\n';
+  table += '| ID | Title | Status | Priority | Assigned To | Due Date |\n';
+  table += '|----|-------|--------|----------|-------------|----------|\n';
 
   for (const wo of workOrders) {
-    const title = String(wo.title || 'Untitled').substring(0, 40);
+    const displayId = String(wo.display_id || wo.id || 'N/A');
+    const title = String(wo.title || 'Untitled').substring(0, 30);
     const status = formatStatus(String(wo.status || 'open'));
     const priority = formatPriority(String(wo.priority || 'medium'));
+    
+    // Get assigned user name if available
+    let assignedTo = 'Unassigned';
+    if (wo.assigned_to_user && typeof wo.assigned_to_user === 'object') {
+      const user = wo.assigned_to_user as Record<string, unknown>;
+      assignedTo = String(user.full_name || 'Unknown');
+    } else if (wo.assigned_to) {
+      assignedTo = 'Assigned';
+    }
+    
     const dueDate = formatDate(String(wo.due_date || ''));
-    const assignedTo = String(wo.assigned_to || 'Unassigned');
-    const created = formatDate(String(wo.created_at || ''));
 
-    table += `| ${title} | ${status} | ${priority} | ${dueDate} | ${assignedTo} | ${created} |\n`;
+    table += `| ${displayId} | ${title} | ${status} | ${priority} | ${assignedTo} | ${dueDate} |\n`;
   }
 
   table += `\n**Total:** ${workOrders.length} work order(s)`;
+  table += `\n\nTo view details of a specific work order, use the get-wo-tool with the work order ID from the first column.`;
 
   return table;
 }
@@ -149,6 +159,7 @@ function formatSingleWorkOrder(wo: Record<string, unknown>): string {
   }
 
   let output = '## Work Order Details\n\n';
+  output += `**ID:** ${getString(wo.display_id, getString(wo.id, 'N/A'))}\n\n`;
   output += `**Title:** ${getString(wo.title, 'Untitled')}\n\n`;
   output += `**Status:** ${formatStatus(getString(wo.status, 'open'))}\n\n`;
   output += `**Priority:** ${formatPriority(getString(wo.priority, 'medium'))}\n\n`;
@@ -158,8 +169,25 @@ function formatSingleWorkOrder(wo: Record<string, unknown>): string {
   }
   
   output += `**Due Date:** ${formatDate(getString(wo.due_date))}\n\n`;
-  output += `**Assigned To:** ${getString(wo.assigned_to, 'Unassigned')}\n\n`;
-  output += `**Created By:** ${getString(wo.created_by, 'Unknown')}\n\n`;
+  
+  // Format assigned user
+  if (wo.assigned_to_user && typeof wo.assigned_to_user === 'object') {
+    const user = wo.assigned_to_user as Record<string, unknown>;
+    output += `**Assigned To:** ${getString(user.full_name, 'Unknown')}\n\n`;
+  } else if (wo.assigned_to) {
+    output += `**Assigned To:** Assigned (details unavailable)\n\n`;
+  } else {
+    output += `**Assigned To:** Unassigned\n\n`;
+  }
+  
+  // Format created by user
+  if (wo.created_by_user && typeof wo.created_by_user === 'object') {
+    const user = wo.created_by_user as Record<string, unknown>;
+    output += `**Created By:** ${getString(user.full_name, 'Unknown')}\n\n`;
+  } else {
+    output += `**Created By:** Unknown\n\n`;
+  }
+  
   output += `**Created At:** ${formatDate(getString(wo.created_at))}\n\n`;
   output += `**Updated At:** ${formatDate(getString(wo.updated_at))}\n\n`;
   
@@ -174,8 +202,6 @@ function formatSingleWorkOrder(wo: Record<string, unknown>): string {
     }
     output += '\n';
   }
-  
-  output += `**ID:** \`${getString(wo.id)}\``;
 
   return output;
 }
@@ -221,14 +247,14 @@ export const listWorkOrdersTool = createTool({
 
 /**
  * Get Work Order Tool
- * Retrieves a specific work order by ID
- * Note: Users should use searchWorkOrdersByTitleTool first to find the ID from a title
+ * Retrieves a specific work order by display ID
+ * Note: Users should use list-wo-tool with search first to find the ID from a title
  */
 export const getWorkOrderTool = createTool({
   id: 'get-wo-tool',
-  description: 'Get a specific work order by ID. If you only have a title, use list-wo-tool with search parameter first to find the ID.',
+  description: 'Get a specific work order by display ID (e.g., WO-ACME-20251031-001). If you only have a title, use list-wo-tool with search parameter first to find the work order.',
   inputSchema: z.object({
-    id: z.string().describe('The work order ID (UUID format)'),
+    id: z.string().describe('The work order display ID (e.g., WO-ACME-20251031-001)'),
   }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: async ({ context, runtimeContext }: { context?: any; runtimeContext: RuntimeContext }) => {
@@ -241,7 +267,11 @@ export const getWorkOrderTool = createTool({
 
       const BASE_URL = getBaseUrl(runtimeContext);
       const fetchOptions = createFetchOptions(runtimeContext, 'GET');
-      const res = await fetch(`${BASE_URL}/api/work-orders/${id}`, fetchOptions);
+      
+      // Always use display-id route
+      const endpoint = `${BASE_URL}/api/work-orders/display-id/${id}`;
+      
+      const res = await fetch(endpoint, fetchOptions);
 
       return await handleApiResponse(res);
     } catch (err) {
@@ -293,9 +323,9 @@ export const createWorkOrderTool = createTool({
  */
 export const updateWorkOrderTool = createTool({
   id: 'update-wo-tool',
-  description: 'Update an existing work order by ID. If you only have a title, use list-wo-tool with search parameter first to find the ID.',
+  description: 'Update an existing work order by display ID (e.g., WO-ACME-20251031-001). If you only have a title, use list-wo-tool with search parameter first to find the work order.',
   inputSchema: z.object({
-    id: z.string().describe('The work order ID to update (UUID format)'),
+    id: z.string().describe('The work order display ID (e.g., WO-ACME-20251031-001)'),
     title: z.string().optional().describe('Work order title'),
     description: z.string().optional().describe('Work order description'),
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().describe('Priority level'),
@@ -314,7 +344,10 @@ export const updateWorkOrderTool = createTool({
 
       const BASE_URL = getBaseUrl(runtimeContext);
       const fetchOptions = createFetchOptions(runtimeContext, 'PATCH', updatePayload);
-      const res = await fetch(`${BASE_URL}/api/work-orders/${id}`, fetchOptions);
+      
+      // Always use display-id route
+      const endpoint = `${BASE_URL}/api/work-orders/display-id/${id}`;
+      const res = await fetch(endpoint, fetchOptions);
 
       return await handleApiResponse(res);
     } catch (err) {

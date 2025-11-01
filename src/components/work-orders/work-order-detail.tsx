@@ -117,7 +117,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         return
       }
 
-      const response = await fetch(`/api/work-orders/${workOrder.id}`, {
+      const response = await fetch(`/api/work-orders/display-id/${workOrder.display_id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -172,9 +172,20 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         {/* Read-only metadata */}
         {!isEditing && (
           <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+            <div className="text-sm">
+              <span className="text-gray-500">Work Order ID:</span>
+              <span className="ml-2 font-mono font-semibold text-gray-900">
+                {workOrder.display_id}
+              </span>
+            </div>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="h-4 w-4" />
               <span>Created: {new Date(workOrder.created_at).toLocaleString()}</span>
+              {workOrder.created_by_user && (
+                <span className="text-gray-500">
+                  by {workOrder.created_by_user.full_name}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="h-4 w-4" />
@@ -184,6 +195,17 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Clock className="h-4 w-4" />
                 <span>Completed: {new Date(workOrder.completed_at).toLocaleString()}</span>
+              </div>
+            )}
+            {workOrder.assigned_to_user && (
+              <div className="text-sm">
+                <span className="text-gray-500">Assigned to:</span>
+                <span className="ml-2 font-medium text-gray-900">
+                  {workOrder.assigned_to_user.full_name}
+                </span>
+                <span className="ml-1 text-gray-500">
+                  ({workOrder.assigned_to_user.email})
+                </span>
               </div>
             )}
           </div>
@@ -240,12 +262,20 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         />
 
         {isAdmin && (
-          <Input
-            label="Assigned To (User ID)"
-            value={formData.assigned_to}
-            onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-            disabled={!isEditing || !canEditField('assigned_to')}
-          />
+          <div>
+            <Input
+              label="Assigned To (User GUID)"
+              value={formData.assigned_to}
+              onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+              disabled={!isEditing || !canEditField('assigned_to')}
+              placeholder="Leave empty to unassign"
+            />
+            {!isEditing && workOrder.assigned_to_user && (
+              <p className="text-xs text-gray-500 mt-1">
+                Currently: {workOrder.assigned_to_user.full_name}
+              </p>
+            )}
+          </div>
         )}
 
         {/* Permission notice for users */}

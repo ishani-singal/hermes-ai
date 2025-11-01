@@ -87,6 +87,8 @@ export function isAdmin(user: AuthenticatedUser): boolean {
 
 /**
  * Check if resource belongs to user's company
+ * Only works with GUIDs (UUIDs) for primary key lookups
+ * For display_id lookups, use dedicated endpoints
  */
 export async function belongsToCompany(
   companyId: string,
@@ -95,6 +97,7 @@ export async function belongsToCompany(
 ): Promise<boolean> {
   const supabase = await createServerClient();
   
+  // Always query by primary key id (GUID)
   const { data, error } = await supabase
     .from(resourceTable)
     .select('company_id')

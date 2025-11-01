@@ -1,9 +1,10 @@
 /**
- * GET /api/work-orders/[id] - Get single work order
- * PATCH /api/work-orders/[id] - Update work order
- * DELETE /api/work-orders/[id] - Delete work order
+ * GET /api/work-orders/id/[id] - Get single work order by UUID
+ * PATCH /api/work-orders/id/[id] - Update work order by UUID
+ * DELETE /api/work-orders/id/[id] - Delete work order by UUID
  * 
- * Authorization: Role-based field restrictions
+ * Internal endpoint using GUID (UUID) - currently unused
+ * Reserved for future internal operations
  */
 
 import { NextRequest } from 'next/server';
@@ -11,9 +12,13 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, notFound } from '@/lib/auth/middleware';
 import type { WorkOrder } from '@/types';
+import {
+  buildWorkOrderQuery,
+  expandWorkOrderResponse,
+} from '@/lib/api/work-order-helpers';
 
 // =============================================
-// GET - Get Single Work Order
+// GET - Get Single Work Order (GUID only - internal)
 // =============================================
 
 export const GET = route()
@@ -23,9 +28,8 @@ export const GET = route()
     const { user, params } = context;
     const supabase = createServiceRoleClient();
 
-    const { data, error } = await supabase
-      .from('work_orders')
-      .select('*')
+    // Fetch with JOINs for expanded data
+    const { data, error } = await buildWorkOrderQuery(supabase)
       .eq('id', params.id)
       .eq('company_id', user!.companyId)
       .single();
@@ -34,11 +38,14 @@ export const GET = route()
       return notFound('Work order not found');
     }
 
-    return success<WorkOrder>(data);
+    // Expand nested data
+    const expanded = expandWorkOrderResponse(data);
+
+    return success<WorkOrder>(expanded);
   });
 
 // =============================================
-// PATCH - Update Work Order
+// PATCH - Update Work Order (Internal - GUID only)
 // =============================================
 
 export const PATCH = route()
@@ -51,28 +58,36 @@ export const PATCH = route()
     // Use service role client
     const supabase = createServiceRoleClient();
 
-    const { data, error } = await supabase
+    // Update work order
+    const { error: updateError } = await supabase
       .from('work_orders')
       .update(body)
       .eq('id', params.id)
+      .eq('company_id', user!.companyId);
+
+    if (updateError) {
+      console.error('Error updating work order:', updateError);
+      return badRequest(updateError.message);
+    }
+
+    // Fetch updated work order with expanded data
+    const { data, error } = await buildWorkOrderQuery(supabase)
+      .eq('id', params.id)
       .eq('company_id', user!.companyId)
-      .select()
-      .maybeSingle();
+      .single();
 
-    if (error) {
-      console.error('Error updating work order:', error);
-      return badRequest(error.message);
+    if (error || !data) {
+      return notFound('Work order not found after update');
     }
 
-    if (!data) {
-      return notFound('Work order not found');
-    }
+    // Expand nested data
+    const expanded = expandWorkOrderResponse(data);
 
-    return success<WorkOrder>(data);
+    return success<WorkOrder>(expanded);
   });
 
 // =============================================
-// DELETE - Delete Work Order (Admin-only)
+// DELETE - Delete Work Order (Admin-only, Internal - GUID only)
 // =============================================
 
 export const DELETE = route()
@@ -96,3 +111,4 @@ export const DELETE = route()
 
     return success({ success: true, message: 'Work order deleted' });
   });
+

@@ -5,8 +5,28 @@
 export type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type WorkOrderPriority = 'low' | 'medium' | 'high' | 'critical';
 
+/**
+ * Expanded user object returned in work order responses
+ */
+export interface WorkOrderUser {
+  id: string;
+  email: string;
+  full_name: string;
+  user_id: string;
+}
+
+/**
+ * Expanded company object returned in work order responses
+ */
+export interface WorkOrderCompany {
+  id: string;
+  name: string;
+  company_code: string;
+}
+
 export interface WorkOrder {
   id: string;
+  display_id: string;
   company_id: string;
   equipment_id?: string;
   title: string;
@@ -20,6 +40,9 @@ export interface WorkOrder {
   custom_fields: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  created_by_user?: WorkOrderUser;
+  assigned_to_user?: WorkOrderUser | null;
+  company?: WorkOrderCompany;
 }
 
 export interface CreateWorkOrderRequest {
