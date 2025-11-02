@@ -120,3 +120,50 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Voice STT component styles */
+.vc-container {
+  border: 1px solid var(--color-border, #ddd);
+  padding: 12px;
+  border-radius: 8px;
+  max-width: 700px;
+}
+.vc-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.vc-toggle {
+  padding: 8px 12px;
+}
+.vc-error {
+  color: crimson;
+}
+.vc-transcript-block {
+  margin-bottom: 8px;
+}
+.vc-transcript-label {
+  font-size: 14px;
+  color: #666;
+}
+.vc-transcript {
+  min-height: 40px;
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+.vc-input-row {
+  display: flex;
+  gap: 8px;
+}
+.vc-input {
+  flex: 1;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+.vc-send {
+  padding: 8px 12px;
+}
+

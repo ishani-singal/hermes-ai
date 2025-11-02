@@ -1,9 +1,9 @@
-'use client'
+"use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { MessageCircle, Send, Loader2 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useVoice } from '@/hooks/useVoice'
+import { ChatMessages } from './chat-messages'
+import { ChatInput } from './chat-input'
 
 export type Message = {
   id: string
@@ -23,6 +23,78 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const { start, stop, listening, partial, lastFinal, error: voiceError, resetFinal } = useVoice({ lang: 'en-US' })
+  const processingRef = useRef(false)
+  const lastSentRef = useRef<{ text: string; time: number } | null>(null)
+  const [streamMode, setStreamMode] = useState(false)
+
+  // populate input from voice partials/final
+  useEffect(() => {
+    if (listening && partial && !processingRef.current) {
+      setInput(partial)
+    }
+  }, [partial, listening])
+
+  useEffect(() => {
+    if (lastFinal && lastFinal.trim().length > 0 && !processingRef.current) {
+      const text = lastFinal.trim()
+      const now = Date.now()
+
+      // if we've sent the same text very recently, skip to avoid duplicates
+      if (lastSentRef.current && lastSentRef.current.text === text && now - lastSentRef.current.time < 2000) {
+        console.debug('Skipping duplicate final transcript send:', text)
+        resetFinal()
+        return
+      }
+
+      // Only auto-send in stream mode, not in push-to-talk mode
+      if (!streamMode) {
+        // Push-to-talk mode: just stop listening, don't auto-send
+        processingRef.current = true
+        ;(async () => {
+          try {
+            await stop()
+            resetFinal()
+          } catch (e) {
+            console.error('error stopping voice input', e)
+          } finally {
+            processingRef.current = false
+          }
+        })()
+        return
+      }
+
+      // Stream mode: auto-send the message
+      processingRef.current = true
+      ;(async () => {
+        try {
+          // stop listening to avoid receiving duplicate finals while sending
+          await stop()
+          await send(text)
+          setInput('')
+          lastSentRef.current = { text, time: Date.now() }
+          // Clear the final after sending to prevent re-triggering
+          resetFinal()
+          
+          // In stream mode, resume listening automatically after a short delay
+          setTimeout(() => {
+            void start()
+          }, 500)
+        } catch (e) {
+          console.error('error auto-sending final transcript', e)
+        } finally {
+          processingRef.current = false
+        }
+      })()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastFinal, stop, streamMode, start])
+
+  useEffect(() => {
+    if (voiceError) {
+      setError(voiceError)
+    }
+  }, [voiceError])
 
   // Initialize with welcome message only if messages are empty
   useEffect(() => {
@@ -118,97 +190,47 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     }
   }
 
+  const handleMicClick = async () => {
+    if (listening && !streamMode) {
+      await stop()
+    } else if (!streamMode) {
+      await start()
+    }
+  }
+
+  const handleStreamClick = async () => {
+    if (streamMode && listening) {
+      // Stop stream mode
+      setStreamMode(false)
+      await stop()
+    } else {
+      // Start stream mode
+      setStreamMode(true)
+      await start()
+    }
+  }
+
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto">
-      {/* Chat Header - Only show on larger screens */}
-      <div className="hidden sm:flex items-center gap-3 mb-4">
-        <MessageCircle className="h-6 w-6 text-gray-600" />
-        <div>
-          <h3 className="text-lg font-medium text-gray-900">AI Chat Assistant</h3>
-          <p className="text-sm text-gray-500">Ask about procedures, troubleshooting, or equipment.</p>
+      <ChatMessages messages={messages} loading={loading} bottomRef={bottomRef} />
+
+      {error && (
+        <div className="mt-4">
+          <div className="text-sm text-red-600 mb-2">{error}</div>
         </div>
-      </div>
+      )}
 
-      {/* Chat Messages Area */}
-      <div className="flex-1 overflow-auto p-3 sm:p-4 bg-white rounded-lg border border-gray-200 shadow-sm min-h-[400px] sm:min-h-[320px]">
-        <div className="space-y-4">
-          {messages.map((m) => (
-            <div key={m.id} className={m.role === 'user' ? 'text-right' : m.role === 'system' ? 'text-center' : 'text-left'}>
-              <div
-                className={
-                  'inline-block px-4 py-2 rounded-lg max-w-[95%] break-words ' +
-                  (m.role === 'user' ? 'bg-blue-600 text-white' : m.role === 'system' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-900')
-                }
-              >
-                {m.role === 'assistant' ? (
-                  <div className="prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-1">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        table: ({ ...props }) => (
-                          <div className="overflow-x-auto my-2">
-                            <table className="min-w-full divide-y divide-gray-300 border border-gray-300" {...props} />
-                          </div>
-                        ),
-                        thead: ({ ...props }) => <thead className="bg-gray-50" {...props} />,
-                        th: ({ ...props }) => (
-                          <th className="px-3 py-2 text-left text-xs font-semibold text-gray-900 border border-gray-300" {...props} />
-                        ),
-                        td: ({ ...props }) => (
-                          <td className="px-3 py-2 text-sm text-gray-700 border border-gray-300" {...props} />
-                        ),
-                        tr: ({ ...props }) => <tr className="hover:bg-gray-50" {...props} />,
-                        p: ({ ...props }) => <p className="my-1" {...props} />,
-                        h2: ({ ...props }) => <h2 className="text-lg font-bold mt-3 mb-2" {...props} />,
-                        h3: ({ ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
-                        strong: ({ ...props }) => <strong className="font-semibold" {...props} />,
-                        code: ({ ...props }) => (
-                          <code className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono" {...props} />
-                        ),
-                      }}
-                    >
-                      {m.text}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <span>{m.text}</span>
-                )}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <Loader2 className="animate-spin h-4 w-4" />
-              <span>Assistant is thinking…</span>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      <div className="mt-4">
-        {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
-
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Type your question here. Press Enter to send, Shift+Enter for newline."
-            className="flex-1 min-h-[54px] p-3 rounded-md border border-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
-            aria-label="Chat message"
-          />
-
-          <button
-            onClick={() => void send()}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {loading ? <Loader2 className="animate-spin h-4 w-4" /> : <Send className="h-4 w-4" />}
-            <span className="text-sm">Send</span>
-          </button>
-        </div>
-      </div>
+      <ChatInput
+        input={input}
+        setInput={setInput}
+        onSend={() => void send()}
+        onKeyDown={onKeyDown}
+        listening={listening}
+        onMicClick={handleMicClick}
+        onStreamClick={handleStreamClick}
+        loading={loading}
+        streamMode={streamMode}
+      />
     </div>
   )
 }
