@@ -134,11 +134,11 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // include cookies so backend auth middleware receives user context
         credentials: 'include',
         body: JSON.stringify({ 
           message: messageText,
           threadId: threadId || undefined,
+          mode: streamMode ? 'VOICE' : 'TEXT',
         }),
       })
 
