@@ -38,6 +38,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
   const [isEditing, setIsEditing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
   // Initialize with defaults so inputs are controlled from first render
@@ -153,6 +155,33 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
     }
     setIsEditing(false)
     setError(null)
+  }
+
+  const handleDelete = async () => {
+    if (!workOrder) return
+    
+    setIsDeleting(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/work-orders/display-id/${workOrder.display_id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete work order')
+      }
+
+      // Close the dialog and notify success
+      onOpenChange(false)
+      onSuccess()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+      setShowDeleteConfirm(false)
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   return (
@@ -311,23 +340,80 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
       </form>
 
       {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
-      {!isEditing && (
-        <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Close
-          </Button>
-          {canEdit && (
+      {!isEditing && !showDeleteConfirm && (
+        <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
+          <div>
+            {isAdmin && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-red-600 hover:text-red-700 hover:border-red-300"
+              >
+                Delete
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-3">
             <Button
               type="button"
-              onClick={() => setIsEditing(true)}
+              variant="outline"
+              onClick={() => onOpenChange(false)}
             >
-              Edit
+              Close
             </Button>
-          )}
+            {canEdit && (
+              <Button
+                type="button"
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation */}
+      {!isEditing && showDeleteConfirm && (
+        <div className="pt-4 border-t border-gray-200">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
+            <h4 className="font-semibold text-red-900 mb-2">Delete Work Order?</h4>
+            <p className="text-sm text-red-800 mb-1">
+              Are you sure you want to delete this work order?
+            </p>
+            <p className="text-sm text-red-700">
+              <strong>Display ID:</strong> {workOrder.display_id}
+            </p>
+            <p className="text-sm text-red-700">
+              <strong>Title:</strong> {workOrder.title}
+            </p>
+            <p className="text-sm text-red-800 mt-2 font-medium">
+              This action cannot be undone.
+            </p>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteConfirm(false)
+                setError(null)
+              }}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDelete}
+              isLoading={isDeleting}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete Work Order
+            </Button>
+          </div>
         </div>
       )}
     </Dialog>

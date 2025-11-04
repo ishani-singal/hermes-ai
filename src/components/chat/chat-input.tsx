@@ -1,4 +1,4 @@
-import { Send, Mic, Radio } from 'lucide-react'
+import { Send, Mic, Radio, StopCircle } from 'lucide-react'
 
 type ChatInputProps = {
   input: string
@@ -10,6 +10,9 @@ type ChatInputProps = {
   onStreamClick: () => void
   loading: boolean
   streamMode: boolean
+  pushToTalkMode: boolean
+  isTTSPlaying: boolean
+  onStopTTS: () => void
 }
 
 export function ChatInput({
@@ -22,14 +25,18 @@ export function ChatInput({
   onStreamClick,
   loading,
   streamMode,
+  pushToTalkMode,
+  isTTSPlaying,
+  onStopTTS,
 }: ChatInputProps) {
   const placeholderText = listening ? 'You can start talking now' : 'Type your question here'
   
   // Disable send button when:
   // 1. Loading (awaiting response)
   // 2. In stream mode (auto-send is enabled)
-  // 3. Listening in push-to-talk mode (not stream mode)
-  const isSendDisabled = loading || streamMode || (listening && !streamMode)
+  // 3. Listening in push-to-talk mode
+  // 4. TTS is playing
+  const isSendDisabled = loading || streamMode || (listening && pushToTalkMode) || isTTSPlaying
 
   return (
     <div className="mt-4">
@@ -43,6 +50,15 @@ export function ChatInput({
           aria-label="Chat message"
         />
         <div className="flex items-center gap-2">
+          {isTTSPlaying && (
+            <button
+              onClick={onStopTTS}
+              title="Stop audio playback"
+              className="inline-flex items-center justify-center p-3 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors animate-pulse"
+            >
+              <StopCircle className="h-5 w-5" />
+            </button>
+          )}
           <button
             onClick={onSend}
             disabled={isSendDisabled}
@@ -53,13 +69,13 @@ export function ChatInput({
           </button>
           <button
             onClick={onMicClick}
-            title={listening && !streamMode ? 'Stop voice input' : 'Start voice input (push-to-talk)'}
+            title={listening && pushToTalkMode ? 'Stop voice input' : 'Start voice input (push-to-talk)'}
             className={
               'inline-flex items-center justify-center p-3 rounded-md border transition-colors ' +
-              (listening && !streamMode ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
+              (listening && pushToTalkMode ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
             }
           >
-            <span className={listening && !streamMode ? 'animate-pulse' : ''}>
+            <span className={listening && pushToTalkMode ? 'animate-pulse' : ''}>
               <Mic className="h-5 w-5" />
             </span>
           </button>

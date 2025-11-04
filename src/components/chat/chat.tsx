@@ -27,6 +27,10 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const processingRef = useRef(false)
   const lastSentRef = useRef<{ text: string; time: number } | null>(null)
   const [streamMode, setStreamMode] = useState(false)
+  const [pushToTalkMode, setPushToTalkMode] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false)
+  const audioPromiseRejectRef = useRef<((reason?: Error) => void) | null>(null)
 
   // populate input from voice partials/final
   useEffect(() => {
@@ -50,17 +54,19 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       // Only auto-send in stream mode, not in push-to-talk mode
       if (!streamMode) {
         // Push-to-talk mode: just stop listening, don't auto-send
-        processingRef.current = true
-        ;(async () => {
-          try {
-            await stop()
-            resetFinal()
-          } catch (e) {
-            console.error('error stopping voice input', e)
-          } finally {
-            processingRef.current = false
-          }
-        })()
+        if (pushToTalkMode) {
+          processingRef.current = true
+          ;(async () => {
+            try {
+              await stop()
+              resetFinal()
+            } catch (e) {
+              console.error('error stopping voice input', e)
+            } finally {
+              processingRef.current = false
+            }
+          })()
+        }
         return
       }
 
@@ -179,20 +185,27 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg')
           await playAudioBlob(audioBlob)
           
-          // Resume listening after audio finishes
+          // Resume listening after audio finishes (only if still in stream mode)
           setTimeout(() => {
             if (streamMode) {
               void start()
             }
           }, 500)
         } catch (audioErr) {
-          console.error('Audio playback error:', audioErr)
-          // Resume listening even if audio fails
-          setTimeout(() => {
-            if (streamMode) {
-              void start()
-            }
-          }, 500)
+          // Check if this was a user-initiated stop (not an actual error)
+          const isUserStop = audioErr instanceof Error && audioErr.message === 'Audio stopped by user'
+          
+          // Only resume if user didn't manually stop and stream mode is still on
+          if (!isUserStop && streamMode) {
+            console.error('Audio playback error:', audioErr)
+            // Resume listening even if audio fails (but not if user stopped)
+            setTimeout(() => {
+              if (streamMode) {
+                void start()
+              }
+            }, 500)
+          }
+          // If user stopped, don't resume listening (they wanted to stop)
         }
       }
     } catch (err: unknown) {
@@ -228,18 +241,59 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       const audioUrl = URL.createObjectURL(blob)
       const audio = new Audio(audioUrl)
       
-      audio.onended = () => {
+      // Store reference and reject function for potential stopping
+      audioRef.current = audio
+      audioPromiseRejectRef.current = reject
+      setIsTTSPlaying(true)
+      
+      const cleanup = (isError: boolean) => {
         URL.revokeObjectURL(audioUrl)
-        resolve()
+        audioRef.current = null
+        audioPromiseRejectRef.current = null
+        setIsTTSPlaying(false)
+        if (isError) {
+          reject(new Error('Audio playback error'))
+        } else {
+          resolve()
+        }
       }
       
-      audio.onerror = (e) => {
-        URL.revokeObjectURL(audioUrl)
-        reject(e)
-      }
-      
-      audio.play().catch(reject)
+      audio.onended = () => cleanup(false)
+      audio.onerror = () => cleanup(true)
+      audio.play().catch((err) => {
+        audioPromiseRejectRef.current = null
+        cleanup(true)
+      })
     })
+  }
+
+  const handleStopTTS = async () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      
+      // Reject the audio promise to stop the async flow
+      if (audioPromiseRejectRef.current) {
+        audioPromiseRejectRef.current(new Error('Audio stopped by user'))
+      }
+      
+      audioRef.current = null
+      audioPromiseRejectRef.current = null
+      setIsTTSPlaying(false)
+      
+      // Stop streaming mode and push-to-talk, return to text mode
+      if (streamMode) {
+        setStreamMode(false)
+        setPushToTalkMode(false)
+        // Stop voice input if it's listening
+        if (listening) {
+          await stop()
+        }
+      }
+      
+      // Clear loading state to re-enable chat
+      setLoading(false)
+    }
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -250,9 +304,13 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   }
 
   const handleMicClick = async () => {
-    if (listening && !streamMode) {
+    if (listening && pushToTalkMode) {
+      // Stop push-to-talk
+      setPushToTalkMode(false)
       await stop()
-    } else if (!streamMode) {
+    } else if (!streamMode && !pushToTalkMode) {
+      // Start push-to-talk mode
+      setPushToTalkMode(true)
       await start()
     }
   }
@@ -261,9 +319,11 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     if (streamMode && listening) {
       // Stop stream mode
       setStreamMode(false)
+      setPushToTalkMode(false)
       await stop()
     } else {
       // Start stream mode
+      setPushToTalkMode(false)
       setStreamMode(true)
       await start()
     }
@@ -289,6 +349,9 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         onStreamClick={handleStreamClick}
         loading={loading}
         streamMode={streamMode}
+        pushToTalkMode={pushToTalkMode}
+        isTTSPlaying={isTTSPlaying}
+        onStopTTS={handleStopTTS}
       />
     </div>
   )
