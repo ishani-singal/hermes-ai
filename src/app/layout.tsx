@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Technician Assistant - Manufacturing AI Copilot",
-  description: "AI-powered assistant for manufacturing technicians",
+  title: "Hermes AI — Technician Assistant",
+  description: "Hermes AI Technician Assistant: AI-powered copilot for manufacturing maintenance, equipment management, and intelligent work order tracking.",
 };
 
 export default function RootLayout({

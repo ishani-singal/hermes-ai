@@ -1,6 +1,8 @@
  'use client'
 
 import { ReactNode } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth/context'
 import { UserMenu } from '@/components/auth/user-menu'
 
@@ -27,14 +29,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 flex-shrink-0">
+      <header className="bg-gradient-to-r from-white via-white to-blue-50/40 backdrop-blur-sm border-b border-teal-100/50 shadow-sm flex-shrink-0 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo/Brand */}
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">Technician Assistant</h1>
+            <div className="flex items-center gap-3">
+              <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity group">
+                <div className="w-10 h-10 relative bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg p-1.5 shadow-md group-hover:shadow-lg transition-shadow">
+                  <Image 
+                    src="/brand/logo.png" 
+                    alt="Hermes AI" 
+                    width={40} 
+                    height={40}
+                    className="object-contain w-full h-full"
+                  />
+                </div>
+                <div className="leading-tight hidden sm:block border-l border-teal-200/50 pl-3">
+                  <span className="text-sm font-bold text-teal-700 block">Hermes AI</span>
+                  <span className="text-xs text-slate-500">Technician Assistant</span>
+                </div>
+              </Link>
             </div>
 
             {/* User Menu */}
