@@ -138,7 +138,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         body: JSON.stringify({ 
           message: messageText,
           threadId: threadId || undefined,
-          mode: streamMode ? 'VOICE' : 'TEXT',
+          streamMode: streamMode, // Send streamMode flag to backend
         }),
       })
 
@@ -159,6 +159,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       // backend success shape may vary; prefer known shapes and fallback to raw
       const assistantText =
         json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
+      const audioBase64 = json?.assistant?.audioBase64 ?? json?.data?.assistant?.audioBase64
 
       const assistantMessage: Message = {
         id: 'a-' + String(Date.now()) + Math.random().toString(16).slice(2),
@@ -167,6 +168,33 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       }
 
       setMessages((m) => [...m, assistantMessage])
+
+      // If we have audio and we're in stream mode, play it
+      if (audioBase64 && streamMode) {
+        try {
+          // Stop listening before playing TTS to prevent self-talking loop
+          await stop()
+          
+          // Convert base64 to blob and play
+          const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg')
+          await playAudioBlob(audioBlob)
+          
+          // Resume listening after audio finishes
+          setTimeout(() => {
+            if (streamMode) {
+              void start()
+            }
+          }, 500)
+        } catch (audioErr) {
+          console.error('Audio playback error:', audioErr)
+          // Resume listening even if audio fails
+          setTimeout(() => {
+            if (streamMode) {
+              void start()
+            }
+          }, 500)
+        }
+      }
     } catch (err: unknown) {
       console.error('chat send error', err)
       setError(err instanceof Error ? err.message : String(err))
@@ -181,6 +209,37 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     } finally {
       setLoading(false)
     }
+  }
+
+  // Helper to convert base64 to blob
+  const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const byteCharacters = atob(base64)
+    const byteNumbers = new Array(byteCharacters.length)
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i)
+    }
+    const byteArray = new Uint8Array(byteNumbers)
+    return new Blob([byteArray], { type: mimeType })
+  }
+
+  // Helper to play audio blob
+  const playAudioBlob = async (blob: Blob): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const audioUrl = URL.createObjectURL(blob)
+      const audio = new Audio(audioUrl)
+      
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl)
+        resolve()
+      }
+      
+      audio.onerror = (e) => {
+        URL.revokeObjectURL(audioUrl)
+        reject(e)
+      }
+      
+      audio.play().catch(reject)
+    })
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

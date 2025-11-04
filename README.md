@@ -6,6 +6,8 @@ An AI-powered assistant for manufacturing technicians on the shop floor. Built w
 
 - 🤖 **AI Chat Assistant**: Powered by Google Gemini 2.0 Flash via Mastra
 - 💬 **Persistent Memory**: Conversations are saved and continue across sessions
+- 🎤 **Voice Input**: Browser-based speech-to-text for hands-free operation
+- 🔊 **Voice Output**: Google Cloud TTS reads responses aloud in streaming mode
 - 🔧 **Work Order Management**: Create, view, and update work orders via chat or UI
 - 👥 **Multi-tenant**: Company-based access control with user roles
 - 🔐 **Authentication**: Secure auth with Supabase
@@ -16,6 +18,7 @@ An AI-powered assistant for manufacturing technicians on the shop floor. Built w
 - **Frontend**: Next.js 15, React 19, TailwindCSS
 - **Backend**: Next.js API Routes, Supabase PostgreSQL
 - **AI Agent**: Mastra with Memory support
+- **Voice**: Browser Speech Recognition API + Google Cloud TTS
 - **Database**: Supabase (PostgreSQL)
 - **Authentication**: Supabase Auth
 
@@ -65,6 +68,23 @@ supabase db push   # To push migrations to existing database
 1. Create an account via the signup page
 2. Create or join a company
 3. Start chatting with the AI assistant or manage work orders
+
+### Voice Features
+
+**Push-to-Talk Mode** (Microphone button):
+- Click microphone to start listening
+- Speak your message
+- Click microphone again or press Send to submit
+
+**Streaming Voice Mode** (Radio/Stream button):
+- Click stream button to start continuous conversation
+- Speak your request → AI responds with text AND voice
+- AI automatically speaks responses aloud using Google TTS
+- Click stream button again to stop
+
+**Requirements for Voice Output:**
+- Set `NEXT_PUBLIC_GOOGLE_API_KEY` in `.env.local`
+- Enable Cloud Text-to-Speech API in Google Cloud Console
 
 ## Documentation
 
@@ -162,6 +182,7 @@ Ensure the following are set:
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
+- `NEXT_PUBLIC_GOOGLE_API_KEY`: Google Cloud API key (for TTS)
 - `INTERNAL_API_BASE_URL`: Internal API URL for server-to-server calls
 
 ## Contributing

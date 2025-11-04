@@ -12,11 +12,14 @@ export const POST = route()
       const { user } = context;
 
       const body = await request.json();
-      const { message, threadId, resourceId, mode = 'TEXT' } = body;
+      const { message, threadId, resourceId, streamMode = false } = body;
 
       if (!message || typeof message !== 'string') {
         return badRequest('message string required');
       }
+
+      // Determine mode based on streamMode flag
+      const mode = streamMode ? 'VOICE' : 'TEXT';
 
       const baseUrl = process.env.INTERNAL_API_BASE_URL;
 
@@ -47,6 +50,7 @@ export const POST = route()
       return success({ 
         assistant: {
           text: result.result.text,
+          audioBase64: result.result.audioBase64,
           action: null,
         },
         // Return threadId so frontend can send it in subsequent messages
