@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createTool } from '@mastra/core/tools';
 import { RuntimeContext } from '@mastra/core/runtime-context';
+import { localDateToUTC } from '@/lib/utils/date-timezone';
 
 // =============================================
 // Helper Functions
@@ -293,7 +294,7 @@ export const createWorkOrderTool = createTool({
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().describe('Priority level (default: medium)'),
     equipment_id: z.string().optional().describe('Equipment ID'),
     assigned_to: z.string().optional().describe('User ID to assign to (admin only)'),
-    due_date: z.string().optional().describe('Due date (ISO format)'),
+    due_date: z.string().optional().describe('Due date (ISO format, e.g., "2025-11-10" or full ISO string)'),
     custom_fields: z.record(z.string(), z.unknown()).optional().describe('Custom fields object'),
   }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -305,8 +306,47 @@ export const createWorkOrderTool = createTool({
         return { ok: false, error: 'Title is required to create a work order' };
       }
 
+      // Validate description - CRITICAL: Description must be provided by user, never auto-generated
+      if (!payload.description || typeof payload.description !== 'string' || !payload.description.trim()) {
+        return { ok: false, error: 'Description is required. Please ask the user for a description of the work order before creating it.' };
+      }
+
+      // Validate description length and content
+      const trimmedDescription = payload.description.trim();
+      if (trimmedDescription.length < 10) {
+        return { ok: false, error: 'Description must be at least 10 characters. Please ask the user to provide more details.' };
+      }
+
+      if (trimmedDescription.length > 5000) {
+        return { ok: false, error: 'Description must be 5000 characters or less' };
+      }
+
+      // Convert due_date if provided in YYYY-MM-DD format
+      let dueDate = payload.due_date;
+      if (dueDate && typeof dueDate === 'string') {
+        // Check if it looks like YYYY-MM-DD format (not full ISO string)
+        if (dueDate.match(/^\d{4}-\d{2}-\d{2}$/) && !dueDate.includes('T')) {
+          try {
+            // Convert local date to UTC using timezone helper
+            dueDate = localDateToUTC(dueDate);
+          } catch (err) {
+            return { ok: false, error: `Invalid date format: ${dueDate}. Use YYYY-MM-DD format.` };
+          }
+        }
+      }
+
+      const createPayload = {
+        title: payload.title,
+        description: trimmedDescription,
+        priority: payload.priority || 'medium',
+        equipment_id: payload.equipment_id || null,
+        assigned_to: payload.assigned_to || null,
+        due_date: dueDate || null,
+        custom_fields: payload.custom_fields || {},
+      };
+
       const BASE_URL = getBaseUrl(runtimeContext);
-      const fetchOptions = createFetchOptions(runtimeContext, 'POST', payload);
+      const fetchOptions = createFetchOptions(runtimeContext, 'POST', createPayload);
       const res = await fetch(`${BASE_URL}/api/work-orders`, fetchOptions);
 
       return await handleApiResponse(res);
@@ -331,7 +371,7 @@ export const updateWorkOrderTool = createTool({
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().describe('Priority level'),
     status: z.enum(['open', 'in_progress', 'completed', 'cancelled']).optional().describe('Work order status'),
     assigned_to: z.string().optional().describe('User ID to assign to'),
-    due_date: z.string().optional().describe('Due date (ISO format)'),
+    due_date: z.string().optional().describe('Due date (ISO format, e.g., "2025-11-10" or full ISO string)'),
   }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: async ({ context, runtimeContext }: { context?: any; runtimeContext: RuntimeContext }) => {
@@ -340,6 +380,19 @@ export const updateWorkOrderTool = createTool({
 
       if (!id) {
         return { ok: false, error: 'Work order ID is required' };
+      }
+
+      // Convert due_date if provided in YYYY-MM-DD format
+      if (updatePayload.due_date && typeof updatePayload.due_date === 'string') {
+        // Check if it looks like YYYY-MM-DD format (not full ISO string)
+        if (updatePayload.due_date.match(/^\d{4}-\d{2}-\d{2}$/) && !updatePayload.due_date.includes('T')) {
+          try {
+            // Convert local date to UTC using timezone helper
+            updatePayload.due_date = localDateToUTC(updatePayload.due_date);
+          } catch (err) {
+            return { ok: false, error: `Invalid date format: ${updatePayload.due_date}. Use YYYY-MM-DD format.` };
+          }
+        }
       }
 
       const BASE_URL = getBaseUrl(runtimeContext);

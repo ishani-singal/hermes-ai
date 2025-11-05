@@ -63,8 +63,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         setIsLoadingUsers(true)
         const response = await fetch('/api/users')
         if (response.ok) {
-          const users = await response.json()
-          const userOptions = users.map((user: any) => ({
+          const users = await response.json() as Array<{ id: string; full_name: string }>
+          const userOptions = users.map((user) => ({
             id: user.id,
             label: user.full_name,
           }))
