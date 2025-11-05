@@ -31,6 +31,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isTTSPlaying, setIsTTSPlaying] = useState(false)
   const audioPromiseRejectRef = useRef<((reason?: Error) => void) | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioUnlockedRef = useRef(false)
 
   // populate input from voice partials/final
   useEffect(() => {
@@ -180,6 +182,10 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         try {
           // Stop listening before playing TTS to prevent self-talking loop
           await stop()
+          // Ensure we've unlocked audio playback on mobile (must be called as part of a user gesture earlier,
+          // but calling again is benign). This resumes a WebAudio context and briefly plays a tiny silent buffer
+          // which helps mobile Safari/Chrome allow subsequent audio playback.
+          await unlockAudio()
           
           // Convert base64 to blob and play
           const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg')
@@ -260,11 +266,62 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       
       audio.onended = () => cleanup(false)
       audio.onerror = () => cleanup(true)
-      audio.play().catch((err) => {
+      audio.play().catch(() => {
         audioPromiseRejectRef.current = null
         cleanup(true)
       })
     })
+  }
+
+  // Attempt to unlock audio playback on mobile browsers. This should be called from a user gesture
+  // (for example when the user clicks to enable stream mode or press the mic). It resumes/creates
+  // an AudioContext and plays a tiny silent buffer to 'unlock' audio on platforms that block
+  // programmatic playback until a gesture occurs.
+  const unlockAudio = async (): Promise<void> => {
+    try {
+      if (audioUnlockedRef.current) return
+      const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
+      const AudioCtx = win.AudioContext || win.webkitAudioContext
+      if (!AudioCtx) return
+
+      let ctx = audioContextRef.current
+      if (!ctx) {
+        ctx = new AudioCtx()
+        audioContextRef.current = ctx
+      }
+      // ensure ctx is not null for TS
+      if (!ctx) return
+
+      if (ctx.state === 'suspended') {
+        // resume the context (must be done in a user gesture)
+        // This call can reject on some browsers; swallow errors
+        // but proceed to attempt a short buffer playback below.
+        await ctx.resume()
+      }
+
+      // Play a tiny silent buffer to ensure playback is unlocked for the session
+      try {
+        const sampleRate = ctx.sampleRate || 44100
+        const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(sampleRate * 0.001)), sampleRate)
+        const src = ctx.createBufferSource()
+        src.buffer = buffer
+        src.connect(ctx.destination)
+        src.start(0)
+        // stop immediately after starting
+        try {
+          src.stop(0)
+        } catch {
+          // ignore
+        }
+      } catch {
+        // ignore buffer/play errors
+      }
+
+      audioUnlockedRef.current = true
+    } catch {
+      // Best-effort only; don't break the flow if this fails
+      // console.debug('unlockAudio failed')
+    }
   }
 
   const handleStopTTS = async () => {
@@ -311,6 +368,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     } else if (!streamMode && !pushToTalkMode) {
       // Start push-to-talk mode
       setPushToTalkMode(true)
+      // Unlock audio as part of the user gesture so subsequent TTS playback is allowed on mobile
+      await unlockAudio()
       await start()
     }
   }
@@ -325,6 +384,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       // Start stream mode
       setPushToTalkMode(false)
       setStreamMode(true)
+      // Unlock audio as part of the user gesture so subsequent TTS playback is allowed on mobile
+      await unlockAudio()
       await start()
     }
   }
