@@ -201,13 +201,15 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           // Check if this was a user-initiated stop (not an actual error)
           const isUserStop = audioErr instanceof Error && audioErr.message === 'Audio stopped by user'
           
-          // Only resume if user didn't manually stop and stream mode is still on
           if (!isUserStop && streamMode) {
-            console.error('Audio playback error:', audioErr)
+            const errorMsg = audioErr instanceof Error ? audioErr.message : String(audioErr)
+            console.error('[TTS] Audio playback error, retrying listening:', errorMsg)
             // Resume listening even if audio fails (but not if user stopped)
             setTimeout(() => {
               if (streamMode) {
-                void start()
+                void start().catch((err) => {
+                  console.error('[TTS] Failed to resume listening:', err)
+                })
               }
             }, 500)
           }
@@ -252,23 +254,34 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       audioPromiseRejectRef.current = reject
       setIsTTSPlaying(true)
       
-      const cleanup = (isError: boolean) => {
+      const cleanup = (isError: boolean, reason?: string) => {
         URL.revokeObjectURL(audioUrl)
         audioRef.current = null
         audioPromiseRejectRef.current = null
         setIsTTSPlaying(false)
         if (isError) {
-          reject(new Error('Audio playback error'))
+          const errorMsg = reason || 'Audio playback error'
+          console.error('[TTS] Audio playback failed:', errorMsg, { audioError: audio.error, audioState: audio.readyState })
+          reject(new Error(errorMsg))
         } else {
           resolve()
         }
       }
       
       audio.onended = () => cleanup(false)
-      audio.onerror = () => cleanup(true)
-      audio.play().catch(() => {
+      
+      audio.onerror = () => {
+        const errorCode = audio.error?.code
+        const errorMsg = audio.error?.message || `MediaError code ${errorCode}`
+        console.error('[TTS] Audio onerror event:', { code: errorCode, message: errorMsg })
+        cleanup(true, errorMsg)
+      }
+      
+      audio.play().catch((err) => {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        console.error('[TTS] audio.play() rejected:', errMsg)
         audioPromiseRejectRef.current = null
-        cleanup(true)
+        cleanup(true, `play() rejected: ${errMsg}`)
       })
     })
   }

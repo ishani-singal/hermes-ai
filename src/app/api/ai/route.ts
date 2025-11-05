@@ -14,7 +14,10 @@ export const POST = route()
       const body = await request.json();
       const { message, threadId, resourceId, streamMode = false } = body;
 
+      console.log('[AI] Received request:', { userId: user?.id, streamMode, messageLength: message?.length });
+
       if (!message || typeof message !== 'string') {
+        console.warn('[AI] Invalid message in request');
         return badRequest('message string required');
       }
 
@@ -33,6 +36,8 @@ export const POST = route()
       const workflow = mastra.getWorkflow('assistantWorkflow');
       const run = await workflow.createRunAsync();
       
+      console.log('[AI] Starting workflow:', { mode, threadId: conversationThreadId });
+      
       const result = await run.start({
         inputData: {
           message,
@@ -44,8 +49,12 @@ export const POST = route()
       });
 
       if (result.status !== 'success') {
+        console.error('[AI] Workflow failed:', { status: result.status, result });
         return badRequest('Workflow execution failed');
       }
+      
+      const hasAudio = !!result.result.audioBase64;
+      console.log('[AI] Workflow succeeded:', { mode, hasAudio, textLength: result.result.text?.length });
       
       return success({ 
         assistant: {
@@ -57,7 +66,7 @@ export const POST = route()
         threadId: conversationThreadId,
       });
     } catch (err: unknown) {
-      console.error('AI route error:', err);
+      console.error('[AI] Route error:', err);
       return badRequest(String(err));
     }
   });
