@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { CreateWorkOrderRequest, WorkOrderPriority } from '@/types'
 import { useAuth } from '@/lib/auth/context'
+import { localDateToUTC } from '@/lib/utils/date-timezone'
 
 export interface WorkOrderCreateFormProps {
   open: boolean
@@ -29,6 +30,8 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false)
   const [formData, setFormData] = useState<CreateWorkOrderRequest>({
     title: '',
     description: '',
@@ -39,6 +42,32 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Fetch users when dialog opens for admin users
+  useEffect(() => {
+    if (open && isAdmin) {
+      const fetchUsers = async () => {
+        try {
+          setIsLoadingUsers(true)
+          const response = await fetch('/api/users')
+          if (response.ok) {
+            const users = await response.json()
+            const userOptions = users.map((user: any) => ({
+              id: user.id,
+              label: user.full_name,
+            }))
+            setUsers(userOptions)
+          }
+        } catch (err) {
+          console.error('Failed to fetch users:', err)
+        } finally {
+          setIsLoadingUsers(false)
+        }
+      }
+
+      fetchUsers()
+    }
+  }, [open, isAdmin])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -73,7 +102,8 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
         title: formData.title.trim(),
         description: formData.description?.trim() || undefined,
         priority: formData.priority as WorkOrderPriority,
-        due_date: formData.due_date || undefined,
+        // Convert local date to UTC timestamp with timezone adjustment
+        due_date: formData.due_date ? localDateToUTC(formData.due_date) : undefined,
         equipment_id: formData.equipment_id?.trim() || undefined,
         assigned_to: isAdmin && formData.assigned_to?.trim() ? formData.assigned_to.trim() : undefined,
       }
@@ -192,12 +222,15 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
         />
 
         {isAdmin && (
-          <Input
-            label="Assign To (User ID)"
-            placeholder="Optional: User ID to assign this work order"
+          <Select
+            label="Assign To (Optional)"
+            options={[
+              { value: '', label: 'Unassigned' },
+              ...users.map(user => ({ value: user.id, label: user.label }))
+            ]}
             value={formData.assigned_to}
             onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isLoadingUsers}
           />
         )}
 

@@ -55,7 +55,7 @@ export const GET = route()
     const supabase = createServiceRoleClient();
 
     // Build query with JOINs for expanded data
-    let query = buildWorkOrderQuery(supabase, '*')
+    let query = buildWorkOrderQuery(supabase)
       .eq('company_id', user!.companyId);
 
     // Apply filters

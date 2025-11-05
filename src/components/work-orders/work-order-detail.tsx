@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { WorkOrder, WorkOrderStatus, WorkOrderPriority, UpdateWorkOrderRequest } from '@/types'
 import { useAuth } from '@/lib/auth/context'
+import { localDateToUTC, utcToLocalDateString } from '@/lib/utils/date-timezone'
 import { Clock } from 'lucide-react'
 
 export interface WorkOrderDetailProps {
@@ -41,6 +42,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false)
   
   // Initialize with defaults so inputs are controlled from first render
   const [formData, setFormData] = useState<UpdateWorkOrderRequest>({
@@ -53,6 +56,32 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
     assigned_to: '',
   })
 
+  // Fetch users when component mounts (for the dropdown)
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        setIsLoadingUsers(true)
+        const response = await fetch('/api/users')
+        if (response.ok) {
+          const users = await response.json()
+          const userOptions = users.map((user: any) => ({
+            id: user.id,
+            label: user.full_name,
+          }))
+          setUsers(userOptions)
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err)
+      } finally {
+        setIsLoadingUsers(false)
+      }
+    }
+
+    if (isAdmin) {
+      fetchUsers()
+    }
+  }, [isAdmin])
+
   // Reset form when work order changes
   useEffect(() => {
     if (workOrder) {
@@ -61,7 +90,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         description: workOrder.description || '',
         status: workOrder.status,
         priority: workOrder.priority,
-        due_date: workOrder.due_date || '',
+        // Convert UTC timestamp back to local date string for the input
+        due_date: workOrder.due_date ? utcToLocalDateString(workOrder.due_date) : '',
         equipment_id: workOrder.equipment_id || '',
         assigned_to: workOrder.assigned_to || '',
       })
@@ -104,7 +134,12 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         updateData.priority = formData.priority
       }
       if (canEditField('due_date') && formData.due_date !== workOrder.due_date) {
-        updateData.due_date = formData.due_date || undefined
+        // Convert local date to ISO string with timezone adjustment
+        if (formData.due_date) {
+          updateData.due_date = localDateToUTC(formData.due_date)
+        } else {
+          updateData.due_date = undefined
+        }
       }
       if (canEditField('equipment_id') && formData.equipment_id !== workOrder.equipment_id) {
         updateData.equipment_id = formData.equipment_id || undefined
@@ -148,7 +183,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
         description: workOrder.description || '',
         status: workOrder.status,
         priority: workOrder.priority,
-        due_date: workOrder.due_date || '',
+        // Convert UTC timestamp back to local date string for the input
+        due_date: workOrder.due_date ? utcToLocalDateString(workOrder.due_date) : '',
         equipment_id: workOrder.equipment_id || '',
         assigned_to: workOrder.assigned_to || '',
       })
@@ -292,17 +328,33 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
         {isAdmin && (
           <div>
-            <Input
-              label="Assigned To (User GUID)"
-              value={formData.assigned_to}
-              onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-              disabled={!isEditing || !canEditField('assigned_to')}
-              placeholder="Leave empty to unassign"
-            />
-            {!isEditing && workOrder.assigned_to_user && (
-              <p className="text-xs text-gray-500 mt-1">
-                Currently: {workOrder.assigned_to_user.full_name}
-              </p>
+            {isEditing ? (
+              <Select
+                label="Assigned To"
+                options={[
+                  { value: '', label: 'Unassigned' },
+                  ...users.map(user => ({ value: user.id, label: user.label }))
+                ]}
+                value={formData.assigned_to}
+                onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+                disabled={!isEditing || !canEditField('assigned_to') || isLoadingUsers}
+              />
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned To
+                </label>
+                <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
+                  {workOrder.assigned_to_user ? (
+                    <>
+                      <span className="font-medium">{workOrder.assigned_to_user.full_name}</span>
+                      <span className="text-gray-500 ml-1">({workOrder.assigned_to_user.email})</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">Unassigned</span>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}
