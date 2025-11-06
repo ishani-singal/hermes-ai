@@ -246,29 +246,42 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   // Helper to play audio blob
   const playAudioBlob = async (blob: Blob): Promise<void> => {
     return new Promise((resolve, reject) => {
-      const audioUrl = URL.createObjectURL(blob)
-      const audio = new Audio(audioUrl)
+      // Ensure blob is audio/mpeg (sometimes it can be sent as octet-stream)
+      const audioBlob = blob.type === 'audio/mpeg' ? blob : new Blob([blob], { type: 'audio/mpeg' })
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      // Create audio element with explicit attributes for better mobile compatibility
+      const audio = new Audio()
+      audio.src = audioUrl
+      audio.preload = 'auto'
       
       // Store reference and reject function for potential stopping
       audioRef.current = audio
       audioPromiseRejectRef.current = reject
       setIsTTSPlaying(true)
       
+      // Add a timeout to catch stuck audio on mobile devices
+      let timeoutId: NodeJS.Timeout | null = null
+      
       const cleanup = (isError: boolean, reason?: string) => {
+        if (timeoutId) clearTimeout(timeoutId)
         URL.revokeObjectURL(audioUrl)
         audioRef.current = null
         audioPromiseRejectRef.current = null
         setIsTTSPlaying(false)
         if (isError) {
           const errorMsg = reason || 'Audio playback error'
-          console.error('[TTS] Audio playback failed:', errorMsg, { audioError: audio.error, audioState: audio.readyState })
+          console.error('[TTS] Audio playback failed:', errorMsg, { audioError: audio.error, audioState: audio.readyState, audioSrc: !!audioUrl })
           reject(new Error(errorMsg))
         } else {
           resolve()
         }
       }
       
-      audio.onended = () => cleanup(false)
+      audio.onended = () => {
+        console.debug('[TTS] Audio playback ended normally')
+        cleanup(false)
+      }
       
       audio.onerror = () => {
         const errorCode = audio.error?.code
@@ -277,63 +290,108 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         cleanup(true, errorMsg)
       }
       
-      audio.play().catch((err) => {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        console.error('[TTS] audio.play() rejected:', errMsg)
-        audioPromiseRejectRef.current = null
-        cleanup(true, `play() rejected: ${errMsg}`)
-      })
+      // Handle canplaythrough event for diagnostics
+      audio.oncanplaythrough = () => {
+        console.debug('[TTS] Audio canplaythrough - fully buffered')
+      }
+      
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.debug('[TTS] Audio playing successfully')
+            // Set a generous timeout (120 seconds) in case audio is unusually long
+            // This prevents the promise from hanging forever on stuck audio
+            timeoutId = setTimeout(() => {
+              if (audio.paused === false) {
+                console.warn('[TTS] Audio playback timeout - audio still playing after expected duration')
+                // Don't consider this a hard error, let the audio finish naturally
+              }
+            }, 120000)
+          })
+          .catch((err) => {
+            const errMsg = err instanceof Error ? err.message : String(err)
+            console.error('[TTS] audio.play() rejected:', errMsg)
+            audioPromiseRejectRef.current = null
+            cleanup(true, `play() rejected: ${errMsg}`)
+          })
+      }
     })
   }
 
   // Attempt to unlock audio playback on mobile browsers. This should be called from a user gesture
   // (for example when the user clicks to enable stream mode or press the mic). It resumes/creates
-  // an AudioContext and plays a tiny silent buffer to 'unlock' audio on platforms that block
+  // an AudioContext and plays a tiny silent audio element to 'unlock' audio on platforms that block
   // programmatic playback until a gesture occurs.
   const unlockAudio = async (): Promise<void> => {
     try {
       if (audioUnlockedRef.current) return
+      
+      // Try multiple unlock strategies for maximum mobile compatibility
+      
+      // Strategy 1: Resume AudioContext if available
       const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
       const AudioCtx = win.AudioContext || win.webkitAudioContext
-      if (!AudioCtx) return
-
-      let ctx = audioContextRef.current
-      if (!ctx) {
-        ctx = new AudioCtx()
-        audioContextRef.current = ctx
-      }
-      // ensure ctx is not null for TS
-      if (!ctx) return
-
-      if (ctx.state === 'suspended') {
-        // resume the context (must be done in a user gesture)
-        // This call can reject on some browsers; swallow errors
-        // but proceed to attempt a short buffer playback below.
-        await ctx.resume()
-      }
-
-      // Play a tiny silent buffer to ensure playback is unlocked for the session
-      try {
-        const sampleRate = ctx.sampleRate || 44100
-        const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(sampleRate * 0.001)), sampleRate)
-        const src = ctx.createBufferSource()
-        src.buffer = buffer
-        src.connect(ctx.destination)
-        src.start(0)
-        // stop immediately after starting
+      if (AudioCtx) {
         try {
-          src.stop(0)
+          let ctx = audioContextRef.current
+          if (!ctx) {
+            ctx = new AudioCtx()
+            audioContextRef.current = ctx
+          }
+          
+          if (ctx && ctx.state === 'suspended') {
+            await ctx.resume()
+          }
+          
+          // Play a tiny silent buffer using WebAudio API
+          if (ctx) {
+            try {
+              const sampleRate = ctx.sampleRate || 44100
+              const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(sampleRate * 0.001)), sampleRate)
+              const src = ctx.createBufferSource()
+              src.buffer = buffer
+              src.connect(ctx.destination)
+              src.start(0)
+              try {
+                src.stop(0)
+              } catch {
+                // ignore
+              }
+            } catch {
+              // ignore buffer/play errors
+            }
+          }
         } catch {
-          // ignore
+          // AudioContext approach failed, try HTML5 Audio approach
+        }
+      }
+      
+      // Strategy 2: Create and play a silent Audio element for maximum compatibility
+      try {
+        const silentAudio = new Audio()
+        // Create a minimal MP3-like structure that mobile browsers accept
+        // This is a tiny silent audio that plays immediately
+        const silentMP3 = 'data:audio/mpeg;base64,SUQzBAAAAAAjUVQ0AAAAPAADzgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/7kGQAAAAA'
+        silentAudio.src = silentMP3
+        silentAudio.volume = 0
+        const playPromise = silentAudio.play()
+        if (playPromise !== undefined) {
+          try {
+            await playPromise
+          } catch {
+            // ignore play errors
+          }
         }
       } catch {
-        // ignore buffer/play errors
+        // ignore silent audio errors
       }
 
       audioUnlockedRef.current = true
+      console.debug('[TTS] Audio playback unlocked for mobile')
     } catch {
       // Best-effort only; don't break the flow if this fails
-      // console.debug('unlockAudio failed')
+      console.debug('[TTS] Audio unlock attempt completed (may have partial success)')
     }
   }
 

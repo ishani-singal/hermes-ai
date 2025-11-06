@@ -64,15 +64,22 @@ export async function generateTTS(
     // Convert stream to buffer
     const audioBuffer = await streamToBuffer(audioStream);
 
+    if (!audioBuffer || audioBuffer.length === 0) {
+      console.warn('Audio buffer is empty');
+      return { text };
+    }
+
     // Encode buffer as base64
     const audioBase64 = audioBuffer.toString('base64');
+
+    console.debug('[TTS] Generated audio successfully:', { textLength: text.length, audioBase64Length: audioBase64.length });
 
     return {
       text,
       audioBase64,
     };
   } catch (error) {
-    console.error('TTS generation error:', error);
+    console.error('[TTS] Generation error:', error);
     return { text };
   }
 }
@@ -96,6 +103,7 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
     });
 
     stream.on('error', (err: Error) => {
+      console.error('[TTS] Stream error:', err);
       reject(err);
     });
   });
