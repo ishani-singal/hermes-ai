@@ -395,77 +395,52 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   // Attempt to unlock audio playback on mobile browsers. This should be called from a user gesture
   // (for example when the user clicks to enable stream mode or press the mic). It resumes/creates
-  // an AudioContext and plays a tiny silent audio element to 'unlock' audio on platforms that block
+  // an AudioContext and plays a tiny silent buffer to 'unlock' audio on platforms that block
   // programmatic playback until a gesture occurs.
   const unlockAudio = async (): Promise<void> => {
     try {
       if (audioUnlockedRef.current) return
-      
-      // Try multiple unlock strategies for maximum mobile compatibility
-      
-      // Strategy 1: Resume AudioContext if available
       const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
       const AudioCtx = win.AudioContext || win.webkitAudioContext
-      if (AudioCtx) {
-        try {
-          let ctx = audioContextRef.current
-          if (!ctx) {
-            ctx = new AudioCtx()
-            audioContextRef.current = ctx
-          }
-          
-          if (ctx && ctx.state === 'suspended') {
-            await ctx.resume()
-          }
-          
-          // Play a tiny silent buffer using WebAudio API
-          if (ctx) {
-            try {
-              const sampleRate = ctx.sampleRate || 44100
-              const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(sampleRate * 0.001)), sampleRate)
-              const src = ctx.createBufferSource()
-              src.buffer = buffer
-              src.connect(ctx.destination)
-              src.start(0)
-              try {
-                src.stop(0)
-              } catch {
-                // ignore
-              }
-            } catch {
-              // ignore buffer/play errors
-            }
-          }
-        } catch {
-          // AudioContext approach failed, try HTML5 Audio approach
-        }
+      if (!AudioCtx) return
+
+      let ctx = audioContextRef.current
+      if (!ctx) {
+        ctx = new AudioCtx()
+        audioContextRef.current = ctx
       }
-      
-      // Strategy 2: Create and play a silent Audio element for maximum compatibility
+      // ensure ctx is not null for TS
+      if (!ctx) return
+
+      if (ctx.state === 'suspended') {
+        // resume the context (must be done in a user gesture)
+        // This call can reject on some browsers; swallow errors
+        // but proceed to attempt a short buffer playback below.
+        await ctx.resume()
+      }
+
+      // Play a tiny silent buffer to ensure playback is unlocked for the session
       try {
-        const silentAudio = new Audio()
-        // Create a minimal MP3-like structure that mobile browsers accept
-        // This is a tiny silent audio that plays immediately
-        const silentMP3 = 'data:audio/mpeg;base64,SUQzBAAAAAAjUVQ0AAAAPAADzgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/7kGQAAAAA'
-        silentAudio.src = silentMP3
-        silentAudio.volume = 0
-        const playPromise = silentAudio.play()
-        if (playPromise !== undefined) {
-          try {
-            await playPromise
-          } catch {
-            // ignore play errors
-          }
+        const sampleRate = ctx.sampleRate || 44100
+        const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(sampleRate * 0.001)), sampleRate)
+        const src = ctx.createBufferSource()
+        src.buffer = buffer
+        src.connect(ctx.destination)
+        src.start(0)
+        // stop immediately after starting
+        try {
+          src.stop(0)
+        } catch {
+          // ignore
         }
       } catch {
-        // ignore silent audio errors
+        // ignore buffer/play errors
       }
 
       audioUnlockedRef.current = true
-      console.log('[TTS] Audio playback unlocked for mobile')
     } catch {
       // Best-effort only; don't break the flow if this fails
-      console.log('[TTS] Audio unlock attempt completed (may have partial success)')
+      // console.log('unlockAudio failed')
     }
   }
 
