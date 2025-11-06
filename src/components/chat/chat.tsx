@@ -48,7 +48,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       // if we've sent the same text very recently, skip to avoid duplicates
       if (lastSentRef.current && lastSentRef.current.text === text && now - lastSentRef.current.time < 2000) {
-        console.debug('Skipping duplicate final transcript send:', text)
+        console.log('Skipping duplicate final transcript send:', text)
         resetFinal()
         return
       }
@@ -169,6 +169,13 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
       const audioBase64 = json?.assistant?.audioBase64 ?? json?.data?.assistant?.audioBase64
 
+      console.log('[Chat] Response received:', { 
+        hasAssistantText: !!assistantText, 
+        hasAudioBase64: !!audioBase64,
+        audioBase64Length: audioBase64?.length,
+        streamMode 
+      })
+
       const assistantMessage: Message = {
         id: 'a-' + String(Date.now()) + Math.random().toString(16).slice(2),
         role: 'assistant',
@@ -179,21 +186,28 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       // If we have audio and we're in stream mode, play it
       if (audioBase64 && streamMode) {
+        console.log('[Chat] Starting audio playback - audio found and streamMode is true')
         try {
           // Stop listening before playing TTS to prevent self-talking loop
           await stop()
+          console.log('[Chat] Voice listening stopped')
+          
           // Ensure we've unlocked audio playback on mobile (must be called as part of a user gesture earlier,
           // but calling again is benign). This resumes a WebAudio context and briefly plays a tiny silent buffer
           // which helps mobile Safari/Chrome allow subsequent audio playback.
           await unlockAudio()
+          console.log('[Chat] Audio unlocked')
           
           // Convert base64 to blob and play
           const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg')
+          console.log('[Chat] About to play audio blob')
           await playAudioBlob(audioBlob)
+          console.log('[Chat] Audio blob playback completed')
           
           // Resume listening after audio finishes (only if still in stream mode)
           setTimeout(() => {
             if (streamMode) {
+              console.log('[Chat] Resuming listening after audio')
               void start()
             }
           }, 500)
@@ -203,18 +217,20 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           
           if (!isUserStop && streamMode) {
             const errorMsg = audioErr instanceof Error ? audioErr.message : String(audioErr)
-            console.error('[TTS] Audio playback error, retrying listening:', errorMsg)
+            console.error('[Chat] Audio playback error, retrying listening:', errorMsg)
             // Resume listening even if audio fails (but not if user stopped)
             setTimeout(() => {
               if (streamMode) {
                 void start().catch((err) => {
-                  console.error('[TTS] Failed to resume listening:', err)
+                  console.error('[Chat] Failed to resume listening:', err)
                 })
               }
             }, 500)
           }
           // If user stopped, don't resume listening (they wanted to stop)
         }
+      } else {
+        console.log('[Chat] Skipping audio playback:', { audioBase64Present: !!audioBase64, streamMode })
       }
     } catch (err: unknown) {
       console.error('chat send error', err)
@@ -234,26 +250,46 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   // Helper to convert base64 to blob
   const base64ToBlob = (base64: string, mimeType: string): Blob => {
-    const byteCharacters = atob(base64)
-    const byteNumbers = new Array(byteCharacters.length)
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i)
+    try {
+      console.log('[TTS] Converting base64 to blob:', { base64Length: base64.length, mimeType })
+      
+      const byteCharacters = atob(base64)
+      console.log('[TTS] atob successful:', { byteCharactersLength: byteCharacters.length })
+      
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: mimeType })
+      console.log('[TTS] Blob created successfully:', { blobSize: blob.size, blobType: blob.type })
+      return blob
+    } catch (err) {
+      console.error('[TTS] base64ToBlob error:', err, { base64Length: base64.length })
+      throw err
     }
-    const byteArray = new Uint8Array(byteNumbers)
-    return new Blob([byteArray], { type: mimeType })
   }
 
   // Helper to play audio blob
   const playAudioBlob = async (blob: Blob): Promise<void> => {
     return new Promise((resolve, reject) => {
+      console.log('[TTS] playAudioBlob starting:', { blobSize: blob.size, blobType: blob.type })
+      
       // Ensure blob is audio/mpeg (sometimes it can be sent as octet-stream)
       const audioBlob = blob.type === 'audio/mpeg' ? blob : new Blob([blob], { type: 'audio/mpeg' })
+      console.log('[TTS] Audio blob ready:', { audioBlob: audioBlob.size, type: audioBlob.type })
+      
       const audioUrl = URL.createObjectURL(audioBlob)
+      console.log('[TTS] Object URL created:', { audioUrl })
       
       // Create audio element with explicit attributes for better mobile compatibility
       const audio = new Audio()
-      audio.src = audioUrl
+      // IMPORTANT: Set crossOrigin BEFORE setting src to ensure proper CORS handling
+      audio.crossOrigin = 'anonymous'
       audio.preload = 'auto'
+      audio.src = audioUrl
+      
+      console.log('[TTS] Audio element created:', { src: audio.src, preload: audio.preload, crossOrigin: audio.crossOrigin, readyState: audio.readyState, networkState: audio.networkState })
       
       // Store reference and reject function for potential stopping
       audioRef.current = audio
@@ -264,57 +300,95 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       let timeoutId: NodeJS.Timeout | null = null
       
       const cleanup = (isError: boolean, reason?: string) => {
+        console.log('[TTS] Cleanup called:', { isError, reason, audioState: audio.readyState, audioPaused: audio.paused })
         if (timeoutId) clearTimeout(timeoutId)
-        URL.revokeObjectURL(audioUrl)
+        try {
+          audio.pause()
+          audio.src = ''
+        } catch (e) {
+          console.log('[TTS] Error pausing/clearing audio:', e)
+        }
+        // Revoke URL after a small delay to ensure it's not needed anymore
+        setTimeout(() => {
+          URL.revokeObjectURL(audioUrl)
+        }, 100)
         audioRef.current = null
         audioPromiseRejectRef.current = null
         setIsTTSPlaying(false)
         if (isError) {
           const errorMsg = reason || 'Audio playback error'
-          console.error('[TTS] Audio playback failed:', errorMsg, { audioError: audio.error, audioState: audio.readyState, audioSrc: !!audioUrl })
+          console.error('[TTS] Audio playback failed:', errorMsg, { audioError: audio.error?.code, audioErrorMsg: audio.error?.message, audioState: audio.readyState, audioSrc: !!audioUrl })
           reject(new Error(errorMsg))
         } else {
+          console.log('[TTS] Audio playback completed successfully')
           resolve()
         }
       }
       
+      audio.onloadstart = () => {
+        console.log('[TTS] Audio loadstart event')
+      }
+      
+      audio.onload = () => {
+        console.log('[TTS] Audio load event')
+      }
+      
+      audio.oncanplay = () => {
+        console.log('[TTS] Audio canplay event')
+      }
+      
+      audio.oncanplaythrough = () => {
+        console.log('[TTS] Audio canplaythrough event - fully buffered')
+      }
+      
+      audio.onplaying = () => {
+        console.log('[TTS] Audio playing event')
+      }
+      
       audio.onended = () => {
-        console.debug('[TTS] Audio playback ended normally')
+        console.log('[TTS] Audio ended event')
         cleanup(false)
+      }
+      
+      audio.onpause = () => {
+        console.log('[TTS] Audio paused event')
+      }
+      
+      audio.onabort = () => {
+        console.error('[TTS] Audio abort event - playback was aborted!')
+        cleanup(true, 'Audio playback aborted')
       }
       
       audio.onerror = () => {
         const errorCode = audio.error?.code
         const errorMsg = audio.error?.message || `MediaError code ${errorCode}`
-        console.error('[TTS] Audio onerror event:', { code: errorCode, message: errorMsg })
+        console.error('[TTS] Audio onerror event:', { code: errorCode, message: errorMsg, readyState: audio.readyState, networkState: audio.networkState })
         cleanup(true, errorMsg)
       }
       
-      // Handle canplaythrough event for diagnostics
-      audio.oncanplaythrough = () => {
-        console.debug('[TTS] Audio canplaythrough - fully buffered')
-      }
-      
       const playPromise = audio.play()
+      console.log('[TTS] audio.play() called, promise available:', !!playPromise)
+      
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            console.debug('[TTS] Audio playing successfully')
+            console.log('[TTS] audio.play() promise resolved - audio playing successfully')
             // Set a generous timeout (120 seconds) in case audio is unusually long
             // This prevents the promise from hanging forever on stuck audio
             timeoutId = setTimeout(() => {
               if (audio.paused === false) {
-                console.warn('[TTS] Audio playback timeout - audio still playing after expected duration')
-                // Don't consider this a hard error, let the audio finish naturally
+                console.warn('[TTS] Audio playback timeout - audio still playing after 120s')
               }
             }, 120000)
           })
           .catch((err) => {
             const errMsg = err instanceof Error ? err.message : String(err)
-            console.error('[TTS] audio.play() rejected:', errMsg)
+            console.error('[TTS] audio.play() promise rejected:', errMsg, { audioState: audio.readyState, err })
             audioPromiseRejectRef.current = null
             cleanup(true, `play() rejected: ${errMsg}`)
           })
+      } else {
+        console.log('[TTS] audio.play() returned undefined (synchronous play or old browser)')
       }
     })
   }
@@ -388,10 +462,10 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       }
 
       audioUnlockedRef.current = true
-      console.debug('[TTS] Audio playback unlocked for mobile')
+      console.log('[TTS] Audio playback unlocked for mobile')
     } catch {
       // Best-effort only; don't break the flow if this fails
-      console.debug('[TTS] Audio unlock attempt completed (may have partial success)')
+      console.log('[TTS] Audio unlock attempt completed (may have partial success)')
     }
   }
 
