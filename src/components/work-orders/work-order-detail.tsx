@@ -361,8 +361,8 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
         {/* Permission notice for users */}
         {!isAdmin && isEditing && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-xs text-blue-800">
+          <div className="p-3 bg-brand/10 border border-brand rounded-md">
+            <p className="text-xs text-brand-dark">
               ℹ️ As a user, you can only edit the description and status fields. 
               Contact an admin to modify other fields.
             </p>

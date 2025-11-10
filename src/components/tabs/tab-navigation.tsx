@@ -29,9 +29,9 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
             className={cn(
               'flex items-center gap-2 py-4 px-2 border-b-2 font-medium text-sm sm:text-base whitespace-nowrap',
               'transition-colors duration-200',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded-t',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 rounded-t',
               isActive
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-brand text-brand'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             )}
             aria-current={isActive ? 'page' : undefined}

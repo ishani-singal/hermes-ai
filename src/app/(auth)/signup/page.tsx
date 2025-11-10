@@ -91,13 +91,13 @@ export default function SignUpPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Mode Toggle */}
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+        <div className="p-4 bg-brand/10 border border-brand rounded-md">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={isCreatingCompany}
               onChange={(e) => setIsCreatingCompany(e.target.checked)}
-              className="mt-0.5 h-4 w-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+              className="mt-0.5 h-4 w-4 text-brand rounded focus:ring-2 focus:ring-brand"
             />
             <div className="flex-1">
               <span className="block text-sm font-medium text-gray-900">
@@ -209,7 +209,7 @@ export default function SignUpPage() {
         <button
           type="submit"
           disabled={isLoading || success}
-          className="w-full min-h-[44px] px-4 py-3 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full min-h-[44px] px-4 py-3 bg-brand text-white font-medium rounded-md hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
           {isLoading 
             ? 'Creating account...' 

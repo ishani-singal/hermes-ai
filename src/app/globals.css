@@ -46,9 +46,9 @@
 :root {
   --radius: 0.625rem;
   /* Brand Colors */
-  --brand-primary: #0d9488;
-  --brand-primary-dark: #0f766e;
-  --brand-primary-light: #14b8a6;
+  --brand-primary: #7088c7;
+  --brand-primary-dark: #5a6fb3;
+  --brand-primary-light: #8a9dd5;
   --brand-secondary: #f59e0b;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -123,6 +123,31 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-brand { color: var(--brand-primary-light); }
+  .text-brand-dark { color: var(--brand-primary-dark); }
+  .text-brand-light { color: #a8badc; }
+  .bg-brand { background-color: var(--brand-primary); }
+  .bg-brand-dark { background-color: var(--brand-primary-dark); }
+  .bg-brand-light { background-color: var(--brand-primary-light); }
+  .bg-brand\/20 { background-color: rgb(138 157 213 / 0.2); }
+  .bg-brand\/30 { background-color: rgb(138 157 213 / 0.3); }
+  .bg-brand\/5 { background-color: rgb(138 157 213 / 0.05); }
+  .border-brand { border-color: var(--brand-primary-light); }
+  .border-brand\/50 { border-color: rgb(138 157 213 / 0.5); }
+  .border-brand\/30 { border-color: rgb(138 157 213 / 0.3); }
+  .shadow-brand { box-shadow: 0 0 20px rgb(138 157 213 / 0.1); }
+  .shadow-brand\/10 { box-shadow: 0 20px 25px -5px rgb(138 157 213 / 0.1); }
+  
+  /* Button hover effect */
+  .btn-brand-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  .btn-brand-hover:hover {
+    background-color: var(--brand-primary-light) !important;
   }
 }
 

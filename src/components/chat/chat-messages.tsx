@@ -29,7 +29,7 @@ export function ChatMessages({ messages, loading, bottomRef }: ChatMessagesProps
               <div
                 className={
                   'inline-block px-4 py-2 rounded-lg max-w-[95%] break-words ' +
-                  (m.role === 'user' ? 'bg-blue-600 text-white' : m.role === 'system' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-900')
+                  (m.role === 'user' ? 'bg-brand text-white' : m.role === 'system' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-900')
                 }
               >
                 {m.role === 'assistant' ? (

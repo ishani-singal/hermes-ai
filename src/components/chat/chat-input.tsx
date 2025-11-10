@@ -46,7 +46,7 @@ export function ChatInput({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholderText}
-          className="flex-1 min-h-[54px] p-3 rounded-md border border-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
+          className="flex-1 min-h-[54px] p-3 rounded-md border border-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-brand"
           aria-label="Chat message"
         />
         <div className="flex items-center gap-2">
@@ -63,7 +63,7 @@ export function ChatInput({
             onClick={onSend}
             disabled={isSendDisabled}
             title={isSendDisabled ? (streamMode ? 'Send disabled in continuous mode' : 'Finish speaking first') : 'Send message'}
-            className="inline-flex items-center justify-center p-3 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            className="inline-flex items-center justify-center p-3 rounded-md bg-brand text-white hover:brightness-110 disabled:opacity-60 transition-all"
           >
             <Send className="h-5 w-5" />
           </button>

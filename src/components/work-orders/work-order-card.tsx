@@ -35,7 +35,7 @@ export function WorkOrderCard({ workOrder, onClick }: WorkOrderCardProps) {
     <Card 
       className={cn(
         'p-4 cursor-pointer transition-all hover:shadow-md',
-        'focus-within:ring-2 focus-within:ring-blue-500',
+        'focus-within:ring-2 focus-within:ring-brand',
         onClick && 'active:scale-[0.99]'
       )}
       onClick={onClick}

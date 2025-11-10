@@ -21,7 +21,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
@@ -29,15 +29,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-brand/5 to-slate-50 flex flex-col">
       {/* Header */}
-      <header className="bg-gradient-to-r from-white via-white to-blue-50/40 backdrop-blur-sm border-b border-teal-100/50 shadow-sm flex-shrink-0 sticky top-0 z-50">
+      <header className="bg-gradient-to-r from-white via-white to-brand/10 backdrop-blur-sm border-b border-brand/20 shadow-sm flex-shrink-0 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo/Brand */}
             <div className="flex items-center gap-3">
               <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity group">
-                <div className="w-10 h-10 relative bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg p-1.5 shadow-md group-hover:shadow-lg transition-shadow">
+                <div className="w-10 h-10 relative bg-gradient-to-br from-brand to-brand-dark rounded-lg p-1.5 shadow-md group-hover:shadow-lg transition-shadow">
                   <Image 
                     src="/brand/logo.png" 
                     alt="Hermes AI" 
@@ -46,8 +46,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     className="object-contain w-full h-full"
                   />
                 </div>
-                <div className="leading-tight hidden sm:block border-l border-teal-200/50 pl-3">
-                  <span className="text-sm font-bold text-teal-700 block">Hermes AI</span>
+                <div className="leading-tight hidden sm:block border-l border-brand/30 pl-3">
+                  <span className="text-sm font-bold text-brand-dark block">Hermes AI</span>
                   <span className="text-xs text-slate-500">Technician Assistant</span>
                 </div>
               </Link>

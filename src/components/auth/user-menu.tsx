@@ -30,9 +30,9 @@ export function UserMenu() {
       {/* User Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 min-h-[44px] px-3 py-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex items-center gap-2 min-h-[44px] px-3 py-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-brand"
       >
-        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-medium">
+        <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-white font-medium">
           {user.full_name.charAt(0).toUpperCase()}
         </div>
         <span className="hidden md:block text-sm font-medium text-gray-700">
