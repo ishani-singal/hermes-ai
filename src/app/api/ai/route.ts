@@ -62,7 +62,6 @@ export const POST = route()
           audioBase64: result.result.audioBase64,
           action: null,
         },
-        // Return threadId so frontend can send it in subsequent messages
         threadId: conversationThreadId,
       });
     } catch (err: unknown) {

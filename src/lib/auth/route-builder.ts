@@ -25,6 +25,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { AuthenticatedUser } from './helpers';
+import type { UserRole } from './helpers';
 import * as middleware from './middleware';
 
 // =============================================
@@ -104,9 +105,9 @@ export class RouteBuilder {
    * @param roles - Array of allowed roles
    * 
    * @example
-   * route().auth().requireRoles(['admin', 'supervisor']).handle(handler)
+   * route().auth().requireRoles(['admin', 'editor']).handle(handler)
    */
-  requireRoles(roles: ('admin' | 'user')[]): this {
+  requireRoles(roles: UserRole[]): this {
     this.middlewares.push(middleware.requireRoles(roles));
     return this;
   }

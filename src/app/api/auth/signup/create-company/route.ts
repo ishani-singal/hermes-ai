@@ -65,11 +65,28 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id
 
-    // Step 2: Create company (user's email becomes primary contact)
+    // Step 2: Generate company_code from company name
+    const { data: companyCodeData, error: companyCodeError } = await supabase
+      .rpc('generate_company_code', { p_company_name: companyName })
+
+    if (companyCodeError) {
+      console.error('Company code generation error:', companyCodeError)
+      // Cleanup
+      await supabase.auth.admin.deleteUser(userId)
+      return NextResponse.json(
+        { error: 'Failed to generate company code' },
+        { status: 500 }
+      )
+    }
+
+    const companyCode = companyCodeData as string
+
+    // Step 3: Create company (user's email becomes primary contact)
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
         name: companyName,
+        company_code: companyCode,
         primary_contact_email: email,
       })
       .select()
@@ -87,7 +104,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 3: Fetch auto-created public.users record (from DB trigger)
+    // Step 4: Fetch auto-created public.users record (from DB trigger)
     // Note: There might be a slight delay, so we retry a few times
     let user = null
     let attempts = 0
@@ -126,7 +143,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 4: Create user_companies relationship (admin role)
+    // Step 5: Create user_companies relationship (admin role)
     const { error: userCompanyError } = await supabase
       .from('user_companies')
       .insert({
@@ -149,13 +166,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 5: Update user's default_company_id
+    // Step 6: Update user's default_company_id
     await supabase
       .from('users')
       .update({ default_company_id: company.id })
       .eq('id', userId)
 
-    // Step 6: Return success response
+    // Step 7: Return success response
     const response: SignUpResponse = {
       user: {
         ...user,

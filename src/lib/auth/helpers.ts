@@ -7,12 +7,13 @@
  */
 
 import { createServerClient } from '@/lib/supabase/server';
+import type { UserRole } from '@/types';
 
 // =============================================
 // Types
 // =============================================
 
-export type UserRole = 'admin' | 'user';
+export type { UserRole } from '@/types';
 
 export interface AuthenticatedUser {
   id: string;
@@ -126,11 +127,13 @@ const RESOURCE_PERMISSIONS: Record<string, ResourcePermissions> = {
   work_orders: {
     create: {
       admin: true,
-      user: true,
+      editor: true,
+      viewer: false,
     },
     read: {
       admin: true,
-      user: true,
+      editor: true,
+      viewer: true,
     },
     update: {
       admin: [
@@ -143,11 +146,13 @@ const RESOURCE_PERMISSIONS: Record<string, ResourcePermissions> = {
         'equipment_id',
         'custom_fields',
       ],
-      user: ['description', 'status'],
+      editor: ['description', 'status'],
+      viewer: [],
     },
     delete: {
       admin: true,
-      user: false,
+      editor: false,
+      viewer: false,
     },
   },
   // Add more resources here (equipment, documents, etc.)

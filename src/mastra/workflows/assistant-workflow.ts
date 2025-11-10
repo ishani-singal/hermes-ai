@@ -27,6 +27,7 @@ const step1 = createStep({
   execute: async ({ inputData, mastra, runtimeContext }) => {
     const { message, mode, threadId, resourceId } = inputData;
     
+    console.log('[Workflow] Step1: technician agent starting');
     const technicianAgent = mastra.getAgent('technicianAgent');
     const response = await technicianAgent.generate(message, {
       runtimeContext,
@@ -36,6 +37,7 @@ const step1 = createStep({
       } : undefined,
     });
 
+    console.log('[Workflow] Step1: technician agent done, response length:', response.text?.length);
     return {
       text: response.text,
       mode,
@@ -56,6 +58,7 @@ const step2 = createStep({
   execute: async ({ inputData, mastra, runtimeContext }) => {
     const { text, mode } = inputData;
     
+    console.log('[Workflow] Step2: voice conversion, mode:', mode);
     // If we are in text mode, skip voice formatting
     if (mode === 'TEXT') {
       return { text, mode };
@@ -64,6 +67,7 @@ const step2 = createStep({
     const voiceFormatter = mastra.getAgent('voiceFormatterAgent');
     const response = await voiceFormatter.generate(text, { runtimeContext });
 
+    console.log('[Workflow] Step2: voice conversion done');
     return {
       text: response.text,
       mode,
@@ -84,13 +88,17 @@ const step3 = createStep({
   execute: async ({ inputData }) => {
     const { text, mode } = inputData;
     
+    console.log('[Workflow] Step3: TTS generation, mode:', mode);
     // If we are in text mode, skip TTS generation
     if (mode === 'TEXT') {
+      console.log('[Workflow] Step3: skipping TTS for TEXT mode');
       return { text };
     }
 
     // Generate TTS audio using the service
-    return await generateTTS(text);
+    const result = await generateTTS(text);
+    console.log('[Workflow] Step3: TTS done, audioBase64 present:', !!result.audioBase64);
+    return result;
   },
 });
 

@@ -99,13 +99,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 4: Add user to company as user (auto-approved for MVP)
+    // Step 4: Add user to company as editor (auto-approved for MVP)
     const { error: userCompanyError } = await supabase
       .from('user_companies')
       .insert({
         user_id: userId,
         company_id: company.id,
-        role: 'user', // Start as user for MVP, admin can upgrade later
+        role: 'editor', // Start as editor for MVP, admin can upgrade later
         is_active: true,
       })
 
