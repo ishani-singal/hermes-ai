@@ -239,7 +239,22 @@ export const listWorkOrdersTool = createTool({
       const fetchOptions = createFetchOptions(runtimeContext, 'GET');
       const res = await fetch(url, fetchOptions);
 
-      return await handleApiResponse(res);
+      const response = await handleApiResponse(res);
+      
+      // OPTIMIZATION: Return only essential fields to reduce LLM processing time
+      // The full objects with nested user/company data cause 20+ second delays
+      if (response.ok && Array.isArray(response.result)) {
+        response.result = response.result.map((wo: Record<string, unknown>) => ({
+          display_id: wo.display_id,
+          title: wo.title,
+          status: wo.status,
+          priority: wo.priority,
+          assigned_to_name: (wo.assigned_to_user as Record<string, unknown>)?.full_name || 'Unassigned',
+          due_date: wo.due_date,
+        }));
+      }
+      
+      return response;
     } catch (err) {
       return { ok: false, error: String(err) };
     }
