@@ -2,9 +2,7 @@ import { Mastra } from '@mastra/core';
 import { technicianAgent } from './agents/technician-assistant-agent';
 import { voiceFormatterAgent } from './agents/voice-formatter-agent';
 import { assistantWorkflow } from './workflows/assistant-workflow';
-import { getStorage } from './storage';
-
-const storageInstance = getStorage();
+import { storage } from './storage';
 
 export const mastra = new Mastra({
   agents: { 
@@ -18,6 +16,5 @@ export const mastra = new Mastra({
   observability: process.env.NODE_ENV === 'development' ? {
     default: { enabled: true }, // View traces in Mastra Studio locally
   } : undefined,
-  // Use shared storage instance if available (during build, may not have DB connection)
-  ...(storageInstance ? { storage: storageInstance } : {}),
+  storage, // Use shared storage instance
 });
