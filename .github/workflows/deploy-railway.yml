@@ -1,0 +1,34 @@
+name: Approve Production Deploy (Railway)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Validated in Render?'
+        required: true
+        type: choice
+        options:
+          - 'Yes - Deploy to Railway Production'
+          - 'No - Cancel'
+
+jobs:
+  approve-production:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate approval
+        run: |
+          if [ "${{ github.event.inputs.environment }}" != "Yes - Deploy to Railway Production" ]; then
+            echo "❌ Production deployment cancelled"
+            exit 1
+          fi
+          echo "✅ Production deployment approved"
+      
+      - name: Trigger Railway deployment
+        run: |
+          echo "🚀 CI passed - Railway will now deploy to production"
+          echo "📅 Approved at: $(date)"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Approved by: ${{ github.actor }}"
+          echo ""
+          echo "Railway is waiting for this CI check to pass before releasing."

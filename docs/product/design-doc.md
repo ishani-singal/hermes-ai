@@ -229,11 +229,115 @@ WorkOrderService
 
 ---
 
-### 2.3 Data Integration
+### 2.3 Equipment & Document Management
 
-**Equipment Upload:**
+**Equipment:**
+- Company-scoped equipment catalog
+- Equipment linked to documents (manuals, safety guides, SOPs)
+- Used as context for work orders and AI conversations
 
-**CSV Processing:**
+**Document Processing Pipeline:**
+
+```
+Upload → Extract → Chunk → Embed → Upsert Pinecone
+
+1. Upload Phase:
+   - POST /api/documents/upload (multipart/form-data)
+   - Validate file type (PDF, DOCX)
+   - Validate size (< 50MB)
+   - Upload to Supabase Storage: {companyId}/{docId}/{filename}
+   - Create document record with status = 'processing'
+   
+2. Extract Phase (Background Job):
+   - Download file from Supabase Storage
+   - PDF: pdf-parse library
+   - DOCX: mammoth library
+   - Extract text + preserve page numbers
+   
+3. Chunk Phase:
+   - Split into 500 tokens (~2000 characters)
+   - 50-token overlap (~200 characters)
+   - Sentence-boundary aware sliding window
+   - Preserve page numbers
+   
+4. Embed Phase:
+   - Batch process (100 chunks per request)
+   - Google Vertex AI text-embedding-004
+   - 1536-dimensional vectors
+   
+5. Upsert Phase (Pinecone Only):
+   - Store full chunk text in metadata (~2500 chars max)
+   - Include: document_title, page_number, equipment_id, scope
+   - No Supabase round-trip needed after search
+   - Update document status = 'ready'
+```
+
+**Processing Time Estimates:**
+- 10-page PDF: ~30 seconds
+- 50-page PDF: ~2 minutes
+- 100-page PDF: ~5 minutes
+
+**Error Handling:**
+- Catch all errors during processing
+- Update document status = 'failed'
+- Store error message in processing_error
+- Retry logic: 3 attempts with exponential backoff
+
+**Status Polling:**
+- Client polls /api/documents/{id}/status every 2 seconds
+- Returns: { status, progress?, error? }
+
+---
+
+### 2.4 Intelligence Layer (RAG)
+
+**RAG Workflow (Structured Pattern):**
+
+```
+Step 1: Parallel Fetch (300ms)
+  - Generate query embedding (Vertex AI)
+  - Load equipment list (Supabase)
+  - Detect equipment mentioned in query
+  
+Step 2: Conditional Search (50ms)
+  - Skip RAG for greetings/confirmations
+  - Query Pinecone if technical question detected
+  - Filter by company_id (required), equipment_id (optional)
+  - Top-K: 3-5 results
+  
+Step 3: Build Context (50ms)
+  - Full chunk text from Pinecone metadata (no fetch needed)
+  - Equipment context: max 5 items
+  - Conversation history: last 5 messages
+  - Total tokens: ~4000
+  
+Step 4: Generate Response (800ms first token)
+  - Single LLM call (not tool-based)
+  - Streaming to user
+  - Extract citations from metadata
+  
+Total Latency: ~1.2s first token, ~2-2.5s full response
+Skipped RAG (no search): ~1.5s
+```
+
+**Context Structure:**
+```typescript
+interface AIContext {
+  equipment: Equipment[];
+  documentChunks: Array<{
+    text: string;
+    documentTitle: string;
+    page: number;
+    documentId: string;
+    relevance: number;
+  }>;
+  conversationHistory: Message[];  // Last 5
+}
+```
+
+---
+
+### 2.5 Session Management
 ```
 1. User uploads CSV file
 2. Parse with Papaparse library
@@ -463,7 +567,52 @@ After session ends or periodically:
 
 ## 3. Tech Stack Details
 
-### 3.1 Frontend Stack
+### 3.1 Frontend Architecture
+
+**Responsive Navigation (Web + Mobile):**
+
+The application uses a **responsive navigation pattern** that adapts to device size:
+
+```typescript
+// Conditional rendering based on viewport
+const Layout = () => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  
+  return (
+    <>
+      {isMobile ? (
+        <BottomNavigation />  // Phone: Bottom tabs (thumb-friendly)
+      ) : (
+        <SideNavigation />    // Desktop: Left sidebar
+      )}
+      <main>{children}</main>
+    </>
+  );
+};
+```
+
+**Navigation Structure:**
+- **Web (Desktop)**: Collapsible side navbar with icons + text labels
+- **Mobile (< 768px)**: Bottom tab navigation (Work Orders, Equipment, Documents, Chat)
+- **Tablet**: Can use either pattern based on orientation
+
+**Navigation Items:**
+```
+1. Dashboard (home)
+2. Work Orders (list + kanban view)
+3. Equipment (list, create, upload docs)
+4. Documents (library)
+5. Chat (conversation)
+6. Settings (admin only)
+```
+
+**Benefits for PWA:**
+- Bottom nav follows native app patterns (iOS/Android)
+- Thumb-friendly mobile UI
+- Responsive: Same code, different layout
+- No conflicts between web/mobile UX
+
+### 3.2 Frontend Stack
 
 ```yaml
 Framework: Next.js 14 (App Router)
@@ -491,7 +640,7 @@ WebSocket: Native WebSocket API
 }
 ```
 
-### 3.2 Backend Stack
+### 3.3 Backend Stack
 
 ```yaml
 Runtime: Node.js 20.x LTS
@@ -530,7 +679,7 @@ app.prepare().then(() => {
 });
 ```
 
-### 3.3 AI/ML Stack
+### 3.4 AI/ML Stack
 
 ```yaml
 LLM: Google Gemini 1.5 Flash
@@ -583,13 +732,13 @@ const pinecone = new Pinecone({
 const index = pinecone.index('manufacturing-copilot');
 ```
 
-### 3.4 Database & Storage
+### 3.5 Database & Storage
 
 ```yaml
 Primary DB: PostgreSQL 15 (via Supabase)
-Vector Extension: pgvector 0.5.x (fallback)
 Auth: Supabase Auth (JWT-based)
 File Storage: Supabase Storage
+Vector DB: Pinecone (no Supabase pgvector)
 DB Client: @supabase/supabase-js 2.x
 ```
 
@@ -609,7 +758,7 @@ export const supabaseAdmin = createClient(
 );
 ```
 
-### 3.5 Development Tools
+### 3.6 Development Tools
 
 ```yaml
 Package Manager: pnpm (or npm)
@@ -1257,7 +1406,69 @@ const needsSwitcher = userCompanies.length > 1;
 )}
 ```
 
-### 5.2 Row-Level Security (RLS)
+### 5.2 Equipment & Documents Schema
+
+**Equipment Table:**
+```sql
+equipment {
+  id: UUID (PK)
+  company_id: UUID (FK → companies, NOT NULL)
+  name: VARCHAR (required)
+  type: VARCHAR (e.g., "CNC", "Conveyor", "Hydraulic Pump")
+  manufacturer: VARCHAR
+  model: VARCHAR
+  serial_number: VARCHAR
+  location: VARCHAR
+  metadata: JSONB (custom fields per company schema)
+  created_at: TIMESTAMP
+  updated_at: TIMESTAMP
+  
+  UNIQUE(company_id, serial_number)
+  INDEX idx_equipment_company ON equipment(company_id)
+}
+```
+
+**Documents Table:**
+```sql
+documents {
+  id: UUID (PK)
+  company_id: UUID (FK → companies, NOT NULL)
+  equipment_id: UUID (FK → equipment, NULLABLE)
+  scope: TEXT CHECK ('company' | 'equipment')
+    -- 'equipment': linked to specific equipment
+    -- 'company': available company-wide
+  title: VARCHAR(255) (required)
+  type: TEXT CHECK ('manual' | 'safety' | 'sop' | 'troubleshooting' | 'other')
+  file_url: TEXT (Supabase Storage path)
+  file_size: INTEGER (bytes)
+  page_count: INTEGER
+  status: TEXT CHECK ('uploaded' | 'processing' | 'ready' | 'failed')
+  processing_error: TEXT (nullable)
+  created_at: TIMESTAMP
+  updated_at: TIMESTAMP
+  
+  CONSTRAINT scope_equipment_check:
+    -- If scope='equipment', equipment_id must be NOT NULL
+    (scope = 'company' OR equipment_id IS NOT NULL)
+  
+  INDEX idx_documents_company ON documents(company_id)
+  INDEX idx_documents_equipment ON documents(equipment_id) WHERE equipment_id IS NOT NULL
+  INDEX idx_documents_status ON documents(status)
+  INDEX idx_documents_scope ON documents(company_id, scope)
+  INDEX idx_equipment_company ON equipment(company_id)
+}
+```
+
+**Why This Design:**
+- **No document_chunks table**: Chunks stored only in Pinecone (faster, simpler)
+- **Documents table**: Tracks metadata for UI, processing status, file location
+- **Scope column**: Distinguish between equipment-specific and company-wide docs
+- **Status tracking**: UI polls for processing progress during upload
+- **File location**: Enables downloads via signed URLs
+
+---
+
+### 5.3 Row-Level Security (RLS)
 
 **RLS Strategy Overview:**
 
@@ -1430,70 +1641,66 @@ export async function PATCH(request: Request) {
 
 ### 5.3 Vector Storage (Pinecone)
 
-**Index Configuration:**
-```typescript
-// Create index (one-time setup)
-await pinecone.createIndex({
-  name: 'manufacturing-copilot',
-  dimension: 1536, // Google Vertex AI embedding size
-  metric: 'cosine',
-  spec: {
-    serverless: {
-      cloud: 'gcp',
-      region: 'us-west1'
-    }
-  }
-});
+**Single Index Configuration:**
+```
+Index Name: "manufacturing-copilot"
+Dimension: 1536 (Google Vertex AI embeddings)
+Metric: cosine
+Serverless: Yes (us-west1-gcp)
 ```
 
-**Vector Metadata Structure:**
+**Vector Structure:**
 ```json
 {
-  "id": "chunk-uuid-123",
-  "values": [0.123, -0.456, ...], // 1536 dimensions
+  "id": "doc-{documentId}-chunk-{chunkIndex}",
+  "values": [1536 dimensional embedding],
   "metadata": {
-    "document_id": "doc-uuid-456",
-    "company_id": "company-uuid-789",
-    "chunk_index": 0,
+    "company_id": "uuid",
+    "document_id": "uuid",
     "document_title": "Haas VF-2 Manual",
     "document_type": "manual",
-    "equipment_id": "equip-uuid-101",
+    "equipment_id": "uuid (nullable)",
+    "equipment_name": "CNC Machine A (nullable)",
+    "scope": "equipment | company",
     "page_number": 87,
-    "chunk_text": "Error 404 indicates..." // First 500 chars for preview
+    "chunk_index": 42,
+    "chunk_text": "FULL TEXT (up to 2500 chars)",
+    "created_at": "2024-10-15T..."
   }
 }
 ```
 
-**Upserting Vectors:**
-```typescript
-await index.upsert({
-  vectors: chunks.map((chunk, i) => ({
-    id: `${documentId}-chunk-${i}`,
-    values: embeddings[i],
-    metadata: {
-      document_id: documentId,
-      company_id: companyId,
-      chunk_index: i,
-      document_title: document.title,
-      chunk_text: chunk.substring(0, 500),
-      page_number: chunk.pageNumber
-    }
-  }))
-});
-```
+**Chunking Strategy:**
+- **Size**: 500 tokens (~2000 characters)
+- **Overlap**: 50 tokens (~200 characters)
+- **Algorithm**: Sentence-boundary aware sliding window
+- **Full Text Stored**: In Pinecone metadata (no Supabase fetch after search)
+- **Preserve Structure**: Page numbers, document hierarchy
 
-**Querying Vectors:**
+**Search Pattern:**
 ```typescript
-const results = await index.query({
+// Always filter by company (data isolation)
+const results = await pinecone.query({
   vector: queryEmbedding,
-  topK: 5,
+  topK: 3,  // Start with 3, increase to 5 for complex questions
   filter: {
     company_id: { $eq: companyId },
-    document_type: { $in: ['manual', 'tsg'] } // Optional
+    equipment_id: { $eq: equipmentId },  // Optional filter
+    document_type: { $in: ['manual', 'troubleshooting'] }  // Optional
   },
   includeMetadata: true
 });
+
+// Result includes full chunk text in metadata (immediate use)
+// No secondary Supabase fetch needed
 ```
+
+**Why Pinecone Only (No document_chunks in Supabase):**
+- **Faster**: 350ms total vs 500ms (no Supabase round-trip)
+- **Simpler**: Single vector store, single source of truth
+- **Scalable**: Handles millions of vectors efficiently
+- **Cost-effective**: Free tier covers MVP + significant growth
+- **Trade-off**: Chunk text limited to ~2500 chars (acceptable for technical manuals)
 
 ### 5.4 File Storage (Supabase Storage)
 
@@ -1503,35 +1710,12 @@ documents/
   └── {company_id}/
       └── {document_id}/
           └── {filename}.pdf
-
-media/
-  └── {company_id}/
-      └── images/{file_id}.jpg
-      └── videos/{file_id}.mp4
-      └── audio/{file_id}.webm
-
-tts/
-  └── {timestamp}.mp3  # Temporary TTS audio files
 ```
 
-**Storage Policies:**
-```sql
--- Users can only upload to their company folder
-CREATE POLICY documents_upload_policy ON storage.objects
-  FOR INSERT
-  WITH CHECK (
-    bucket_id = 'documents' 
-    AND (storage.foldername(name))[1] = (SELECT company_id::text FROM users WHERE id = auth.uid())
-  );
-
--- Users can read their company's files
-CREATE POLICY documents_select_policy ON storage.objects
-  FOR SELECT
-  USING (
-    bucket_id = 'documents'
-    AND (storage.foldername(name))[1] = (SELECT company_id::text FROM users WHERE id = auth.uid())
-  );
-```
+**Storage Access:**
+- Upload: POST /api/documents/upload
+- Download: GET /api/documents/{id}/download (signed URL, 1 hour expiry)
+- Delete: Cascades when document record deleted
 
 ## 6. API Design
 
@@ -1574,21 +1758,32 @@ POST   /api/work-orders/:id/attachments
 
 **Equipment API:**
 ```
+POST   /api/equipment
+- Purpose: Create single equipment
+- Request: { name, type, manufacturer, model, serial_number, location }
+
+GET    /api/equipment
+- Query params: search, type, limit, page
+- Response: Equipment list
+
+GET    /api/equipment/:id
+- Purpose: Get single equipment with linked documents
+- Response: Equipment + associated documents
+
+PUT    /api/equipment/:id
+- Purpose: Update equipment
+
+DELETE /api/equipment/:id
+- Purpose: Delete equipment
+
+GET    /api/equipment/:id/documents
+- Purpose: Get all documents linked to this equipment
+- Response: Document[] (equipment-specific + company-wide docs)
+
 POST   /api/equipment/import
 - Purpose: Bulk CSV upload
 - Request: multipart/form-data with CSV file
 - Response: { imported, errors[] }
-
-POST   /api/equipment
-- Purpose: Create single equipment
-
-GET    /api/equipment
-- Query params: search, type, limit
-- Response: Equipment list
-
-GET    /api/equipment/:id
-PUT    /api/equipment/:id
-DELETE /api/equipment/:id
 ```
 
 **Documents API:**
@@ -1596,17 +1791,31 @@ DELETE /api/equipment/:id
 POST   /api/documents/upload
 - Purpose: Upload PDF/DOCX for processing
 - Request: multipart/form-data
-- Response: { id, status: "processing", estimatedTime }
+  - file: PDF or DOCX
+  - title: string
+  - type: 'manual' | 'safety' | 'sop' | 'troubleshooting' | 'other'
+  - scope: 'company' | 'equipment'
+  - equipmentId: uuid (required if scope='equipment')
+- Response: { documentId, status: 'processing' }
 
 GET    /api/documents/:id/status
 - Purpose: Check processing status
-- Response: { status, chunksProcessed, error? }
+- Response: { status, progress?, error? }
 
 GET    /api/documents
-- Query params: type, equipmentId
+- Query params: equipmentId?, type?, scope?, companyId
 - Response: Document list with metadata
 
+GET    /api/documents/:id
+- Purpose: Get document metadata
+
+GET    /api/documents/:id/download
+- Purpose: Get signed download URL (1 hour expiry)
+- Response: { url: string }
+
 DELETE /api/documents/:id
+- Purpose: Delete document + file + Pinecone chunks
+- Cascade delete: document, Supabase Storage file, all Pinecone chunks
 ```
 
 **Conversations API:**
@@ -1616,7 +1825,7 @@ GET    /api/conversations/:sessionId
 - Response: { messages[], startedAt, endedAt, status }
 
 GET    /api/conversations
-- Query params: userId, status, limit
+- Query params: status, limit
 - Response: List of conversation sessions
 ```
 
@@ -1857,55 +2066,94 @@ Response:
 
 ### 7.6 RAG Implementation
 
-**Context Construction:**
+**RAG Architecture: Structured Workflow Pattern**
+
+**Workflow Steps:**
+```typescript
+Step 1: Parallel Context Fetch
+- Generate query embedding (Google Vertex AI)
+- Fetch relevant equipment (if mentioned in query)
+- Execute in parallel: Promise.all([...])
+
+Step 2: Conditional RAG Search
+- Detect if query needs knowledge lookup
+- Skip RAG for greetings/confirmations
+- If needed: Query Pinecone with filters
+  - Filter: company_id (always)
+  - Filter: equipment_id (if identified)
+  - Top-K: 3 (simple) to 5 (complex)
+
+Step 3: Build Optimized Prompt
+- Equipment context: Max 5 equipment
+- Documentation: 3-5 chunks (full text from Pinecone metadata)
+- Conversation history: Last 5 messages only
+- Total context: ~4000 tokens (fast LLM processing)
+
+Step 4: Generate Response (Streaming)
+- Single LLM call (not tool-based)
+- Stream response to user (immediate feedback)
+- Extract citations from chunk metadata
+- Format sources: [Document, Page X]
 ```
-System Prompt Components:
-1. Company Context:
-   - Equipment inventory
-   - Active work orders
-   - User role and permissions
 
-2. Retrieved Documentation:
-   - Top 5 relevant chunks
-   - Source document titles
-   - Page numbers
+**Performance Targets:**
+```
+Context fetch (parallel): 300ms
+Pinecone search: 50ms
+Prompt building: 50ms
+LLM first token: 800ms
+Total to first response: ~1.2 seconds
+Full response: ~2-2.5 seconds
 
-3. Conversation History:
-   - Last 10 messages
-   - Role identification (user/assistant)
-
-4. Instructions:
-   - Citation requirements
-   - Handling uncertainty
-   - Function calling guidelines
+When RAG skipped (greetings, confirmations):
+Result: ~1.5 seconds (no search overhead)
 ```
 
-**Prompt Template Structure:**
+**Citation Format:**
+```
+AI Response: "Based on your CNC Model X manual (page 87), 
+error 404 indicates spindle overheat. To reset: ..."
+
+Citation Display:
+[1] Haas VF-2 Troubleshooting Guide, Page 87
+```
+
+**Context Structure:**
+```typescript
+interface AIContext {
+  equipment: Equipment[];  // Max 5
+  documentChunks: {
+    text: string;
+    documentTitle: string;
+    page: number;
+    relevance: number;
+    documentId: string;
+  }[];  // 3-5 chunks
+  conversationHistory: Message[];  // Last 5 only
+}
+```
+
+**Prompt Template:**
 ```
 You are a manufacturing assistant for {company_name}.
 
-Company Equipment:
-- [Equipment list]
+Equipment Available:
+{equipment list, max 5}
 
-Active Work Orders:
-- [Work order summaries]
+Relevant Manuals:
+{document chunks with citations}
 
-Relevant Documentation:
-[Retrieved chunks with sources]
+Recent Conversation:
+{last 5 messages}
 
-Conversation History:
-[Last 10 messages]
+User Question: {query}
 
-User Question: {user_query}
-
-Instructions: [Guidelines for response format, citations, etc.]
+Instructions:
+- Answer using the manuals above
+- Always cite sources [Document, Page X]
+- If uncertain, say so clearly
+- Keep responses concise
 ```
-
-**Citation Extraction:**
-- Parse document references from chunks
-- Format: "[Document Title, Page X]"
-- Include in response metadata
-- Display as footnotes in UI
 
 ---
 
