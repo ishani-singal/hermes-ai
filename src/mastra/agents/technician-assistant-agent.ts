@@ -11,7 +11,7 @@ import {
   listUsersTool,
   findUserTool,
 } from '../tools/user-tools';
-import { storage } from '../storage';
+import { getStorage } from '../storage';
 
 /* This is the system prompt for the technician assistant agent.
 Right now we are prompting the agent to ask for confirmation when creating a work order.
@@ -75,9 +75,9 @@ export const technicianAgent = new Agent({
     listUsers: listUsersTool,
     findUser: findUserTool,
   },
-  memory: new Memory({
+  memory: getStorage() ? new Memory({
     // Storage configuration - use shared storage instance
-    storage,
+    storage: getStorage()!,
     // Vector store for future semantic recall (without pgvector extension requirement)
     // vector: new PgVector({
     //  connectionString: process.env.DATABASE_URL || '',
@@ -103,5 +103,5 @@ export const technicianAgent = new Agent({
       // Requires embedder configuration above
       semanticRecall: false,
     },
-  }),
+  }) : undefined,
 });
