@@ -1,0 +1,181 @@
+/**
+ * POST /api/equipment - Create new equipment
+ * GET /api/equipment - List equipment with filtering
+ * 
+ * Authorization: Authenticated users (admin can create/delete, all can read)
+ */
+
+import { NextRequest } from 'next/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { route, type RouteContext } from '@/lib/auth/route-builder';
+import { success, badRequest, forbidden } from '@/lib/auth/middleware';
+import * as helpers from '@/lib/auth/helpers';
+import type {
+  CreateEquipmentRequest,
+  Equipment,
+  EquipmentListFilters,
+  EquipmentListResponse,
+} from '@/types';
+
+// =============================================
+// GET - List Equipment
+// =============================================
+
+export const GET = route()
+  .auth()
+  .handle(async (request: NextRequest, context: RouteContext) => {
+    const { user } = context;
+
+    // Parse query parameters
+    const { searchParams } = new URL(request.url);
+
+    const filters: EquipmentListFilters = {
+      search: searchParams.get('search') || undefined,
+      type: searchParams.get('type') || undefined,
+      manufacturer: searchParams.get('manufacturer') || undefined,
+      page: parseInt(searchParams.get('page') || '1', 10),
+      limit: Math.min(parseInt(searchParams.get('limit') || '25', 10), 100),
+    };
+
+    // Use service role client
+    const supabase = createServiceRoleClient();
+
+    // Build base query
+    let query = supabase
+      .from('equipment')
+      .select('*', { count: 'exact' })
+      .eq('company_id', user!.companyId);
+
+    // Apply filters
+    if (filters.search) {
+      const searchTerm = `%${filters.search}%`;
+      query = query.or(
+        `name.ilike.${searchTerm},manufacturer.ilike.${searchTerm},model.ilike.${searchTerm},serial_number.ilike.${searchTerm},display_id.ilike.${searchTerm}`
+      );
+    }
+
+    if (filters.type) {
+      query = query.eq('type', filters.type);
+    }
+
+    if (filters.manufacturer) {
+      query = query.eq('manufacturer', filters.manufacturer);
+    }
+
+    // Apply sorting (newest first by default)
+    query = query.order('created_at', { ascending: false });
+
+    // Apply pagination
+    const from = (filters.page! - 1) * filters.limit!;
+    const to = from + filters.limit! - 1;
+    query = query.range(from, to);
+
+    // Execute query
+    const { data, count, error } = await query;
+
+    if (error) {
+      console.error('Error listing equipment:', error);
+      return badRequest(error.message);
+    }
+
+    const response: EquipmentListResponse = {
+      data: (data || []) as Equipment[],
+      pagination: {
+        page: filters.page!,
+        limit: filters.limit!,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / filters.limit!),
+      },
+      filters,
+    };
+
+    return success(response);
+  });
+
+// =============================================
+// POST - Create Equipment
+// =============================================
+
+export const POST = route()
+  .auth()
+  .handle(async (request: NextRequest, context: RouteContext) => {
+    const { user } = context;
+
+    // Check if user can create equipment
+    if (!helpers.canPerformAction(user!, 'create', 'equipment')) {
+      return forbidden('You do not have permission to create equipment');
+    }
+
+    // Parse request body
+    const body: CreateEquipmentRequest = await request.json();
+
+    // Validate required fields
+    if (!body.name || body.name.trim().length === 0) {
+      return badRequest('Name is required');
+    }
+
+    if (body.name.length > 255) {
+      return badRequest('Name must be 255 characters or less');
+    }
+
+    // Validate optional fields
+    if (body.type && body.type.length > 100) {
+      return badRequest('Type must be 100 characters or less');
+    }
+
+    if (body.manufacturer && body.manufacturer.length > 255) {
+      return badRequest('Manufacturer must be 255 characters or less');
+    }
+
+    if (body.model && body.model.length > 255) {
+      return badRequest('Model must be 255 characters or less');
+    }
+
+    if (body.serial_number && body.serial_number.length > 255) {
+      return badRequest('Serial number must be 255 characters or less');
+    }
+
+    if (body.location && body.location.length > 255) {
+      return badRequest('Location must be 255 characters or less');
+    }
+
+    // Use service role client with explicit company_id injection
+    const supabase = createServiceRoleClient();
+
+    // Check for duplicate serial number within company
+    if (body.serial_number) {
+      const { data: existingEquipment } = await supabase
+        .from('equipment')
+        .select('id')
+        .eq('company_id', user!.companyId)
+        .eq('serial_number', body.serial_number)
+        .maybeSingle();
+
+      if (existingEquipment) {
+        return badRequest('Equipment with this serial number already exists');
+      }
+    }
+
+    // Insert equipment (display_id will be auto-generated by trigger)
+    const { data, error: insertError } = await supabase
+      .from('equipment')
+      .insert({
+        company_id: user!.companyId,
+        name: body.name,
+        type: body.type || null,
+        manufacturer: body.manufacturer || null,
+        model: body.model || null,
+        serial_number: body.serial_number || null,
+        location: body.location || null,
+        metadata: body.metadata || {},
+      })
+      .select()
+      .single();
+
+    if (insertError || !data) {
+      console.error('Error creating equipment:', insertError);
+      return badRequest(insertError?.message || 'Failed to create equipment');
+    }
+
+    return success<Equipment>(data as Equipment, 201);
+  });

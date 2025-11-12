@@ -155,7 +155,63 @@ const RESOURCE_PERMISSIONS: Record<string, ResourcePermissions> = {
       viewer: false,
     },
   },
-  // Add more resources here (equipment, documents, etc.)
+  equipment: {
+    create: {
+      admin: true,
+      editor: true,
+      viewer: false,
+    },
+    read: {
+      admin: true,
+      editor: true,
+      viewer: true,
+    },
+    update: {
+      admin: [
+        'name',
+        'type',
+        'manufacturer',
+        'model',
+        'serial_number',
+        'location',
+        'metadata',
+      ],
+      editor: ['location', 'metadata'],
+      viewer: [],
+    },
+    delete: {
+      admin: true,
+      editor: false,
+      viewer: false,
+    },
+  },
+  documents: {
+    create: {
+      admin: true,
+      editor: true,
+      viewer: false,
+    },
+    read: {
+      admin: true,
+      editor: true,
+      viewer: true,
+    },
+    update: {
+      admin: [
+        'title',
+        'type',
+        'status',
+        'processing_error',
+      ],
+      editor: ['title'], // Editors can only update title (e.g., fix typos)
+      viewer: [],
+    },
+    delete: {
+      admin: true,
+      editor: false,
+      viewer: false,
+    },
+  },
 };
 
 /**
