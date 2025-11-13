@@ -12,7 +12,7 @@ interface DashboardLayoutProps {
 
 /**
  * Layout for protected dashboard pages
- * Includes header with user menu
+ * Includes header with user menu and responsive side navigation
  */
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { isLoading } = useAuth()
@@ -30,9 +30,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-brand/5 to-slate-50 flex flex-col">
-      {/* Header */}
+      {/* Header - Fixed at top on all screens */}
       <header className="bg-gradient-to-r from-white via-white to-brand/10 backdrop-blur-sm border-b border-brand/20 shadow-sm flex-shrink-0 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo/Brand */}
             <div className="flex items-center gap-3">
@@ -59,8 +59,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
       </header>
 
-      {/* Main Content - Full height on mobile */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 flex flex-col">{children}</main>
+      {/* Main Content */}
+      <main className="flex-1 w-full">
+        {children}
+      </main>
     </div>
   )
 }

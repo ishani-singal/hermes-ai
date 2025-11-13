@@ -23,6 +23,12 @@ export interface Document {
   archive_reason?: string; // e.g., 'equipment_deleted', 'manual_archive'
   created_at: string;
   updated_at: string;
+  // Joined relation (when fetched with equipment join)
+  equipment?: {
+    id: string;
+    display_id: string;
+    name: string;
+  } | null;
 }
 
 export interface CreateDocumentRequest {

@@ -49,9 +49,17 @@ export const GET = route()
     const supabase = createServiceRoleClient();
 
     // Build base query - exclude archived documents by default
+    // Join with equipment to get equipment details
     let query = supabase
       .from('documents')
-      .select('*', { count: 'exact' })
+      .select(`
+        *,
+        equipment:equipment_id (
+          id,
+          display_id,
+          name
+        )
+      `, { count: 'exact' })
       .eq('company_id', user!.companyId)
       .is('archived_at', null); // Only show non-archived documents
 

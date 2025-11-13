@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { CreateWorkOrderRequest, WorkOrderPriority } from '@/types'
+import { CreateWorkOrderRequest, WorkOrderPriority, Equipment } from '@/types'
 import { useAuth } from '@/lib/auth/context'
 import { localDateToUTC } from '@/lib/utils/date-timezone'
 
@@ -32,6 +32,8 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
+  const [equipment, setEquipment] = useState<Equipment[]>([])
+  const [isLoadingEquipment, setIsLoadingEquipment] = useState(false)
   const [formData, setFormData] = useState<CreateWorkOrderRequest>({
     title: '',
     description: '',
@@ -43,29 +45,50 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Fetch users when dialog opens for admin users
+  // Fetch users and equipment when dialog opens
   useEffect(() => {
-    if (open && isAdmin) {
-      const fetchUsers = async () => {
+    if (open) {
+      // Fetch equipment list
+      const fetchEquipment = async () => {
         try {
-          setIsLoadingUsers(true)
-          const response = await fetch('/api/users')
+          setIsLoadingEquipment(true)
+          const response = await fetch('/api/equipment')
           if (response.ok) {
-            const users = await response.json() as Array<{ id: string; full_name: string }>
-            const userOptions = users.map((user) => ({
-              id: user.id,
-              label: user.full_name,
-            }))
-            setUsers(userOptions)
+            const data = await response.json()
+            setEquipment(data.data || [])
           }
         } catch (err) {
-          console.error('Failed to fetch users:', err)
+          console.error('Failed to fetch equipment:', err)
         } finally {
-          setIsLoadingUsers(false)
+          setIsLoadingEquipment(false)
         }
       }
 
-      fetchUsers()
+      fetchEquipment()
+
+      // Fetch users for admin
+      if (isAdmin) {
+        const fetchUsers = async () => {
+          try {
+            setIsLoadingUsers(true)
+            const response = await fetch('/api/users')
+            if (response.ok) {
+              const users = await response.json() as Array<{ id: string; full_name: string }>
+              const userOptions = users.map((user) => ({
+                id: user.id,
+                label: user.full_name,
+              }))
+              setUsers(userOptions)
+            }
+          } catch (err) {
+            console.error('Failed to fetch users:', err)
+          } finally {
+            setIsLoadingUsers(false)
+          }
+        }
+
+        fetchUsers()
+      }
     }
   }, [open, isAdmin])
 
@@ -213,12 +236,18 @@ export function WorkOrderCreateForm({ open, onOpenChange, onSuccess }: WorkOrder
           />
         </div>
 
-        <Input
-          label="Equipment ID"
-          placeholder="Optional: Equipment identifier"
+        <Select
+          label="Equipment (Optional)"
+          options={[
+            { value: '', label: 'None - No equipment' },
+            ...equipment.map(eq => ({ 
+              value: eq.id, 
+              label: `${eq.display_id} - ${eq.name}` 
+            }))
+          ]}
           value={formData.equipment_id}
           onChange={(e) => setFormData({ ...formData, equipment_id: e.target.value })}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoadingEquipment}
         />
 
         {isAdmin && (
