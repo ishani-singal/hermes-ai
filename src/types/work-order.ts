@@ -24,6 +24,15 @@ export interface WorkOrderCompany {
   company_code: string;
 }
 
+/**
+ * Expanded equipment object returned in work order responses
+ */
+export interface WorkOrderEquipment {
+  id: string;
+  display_id: string;
+  name: string;
+}
+
 export interface WorkOrder {
   id: string;
   display_id: string;
@@ -43,6 +52,7 @@ export interface WorkOrder {
   created_by_user?: WorkOrderUser;
   assigned_to_user?: WorkOrderUser | null;
   company?: WorkOrderCompany;
+  equipment?: WorkOrderEquipment | null;
 }
 
 export interface CreateWorkOrderRequest {

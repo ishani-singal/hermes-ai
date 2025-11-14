@@ -8,7 +8,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { WorkOrder, WorkOrderUser, WorkOrderCompany } from '@/types';
+import type { WorkOrder, WorkOrderUser, WorkOrderCompany, WorkOrderEquipment } from '@/types';
 
 /**
  * Default select fields with JOINs for work orders
@@ -31,6 +31,11 @@ const WORK_ORDER_SELECT_WITH_JOINS = `
     id,
     name,
     company_code
+  ),
+  equipment:equipment_id (
+    id,
+    display_id,
+    name
   )
 `;
 
@@ -74,6 +79,19 @@ function isWorkOrderCompanyData(data: unknown): data is WorkOrderCompany {
     'id' in data &&
     'name' in data &&
     'company_code' in data
+  );
+}
+
+/**
+ * Type guard for work order equipment data
+ */
+function isWorkOrderEquipmentData(data: unknown): data is WorkOrderEquipment {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    'id' in data &&
+    'display_id' in data &&
+    'name' in data
   );
 }
 
@@ -122,6 +140,15 @@ export function expandWorkOrderResponse(workOrder: any): WorkOrder {
   // Add expanded company data if available
   if (isWorkOrderCompanyData(workOrder.company)) {
     expanded.company = workOrder.company;
+  }
+
+  // Add expanded equipment data if available
+  if (workOrder.equipment) {
+    if (isWorkOrderEquipmentData(workOrder.equipment)) {
+      expanded.equipment = workOrder.equipment;
+    }
+  } else {
+    expanded.equipment = null;
   }
 
   return expanded;

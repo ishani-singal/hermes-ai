@@ -319,12 +319,31 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
           disabled={!isEditing || !canEditField('due_date')}
         />
 
-        <Input
-          label="Equipment ID"
-          value={formData.equipment_id}
-          onChange={(e) => setFormData({ ...formData, equipment_id: e.target.value })}
-          disabled={!isEditing || !canEditField('equipment_id')}
-        />
+        {/* Equipment Display - Show name/display_id when not editing, allow GUID input when editing */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Equipment
+          </label>
+          {isEditing ? (
+            <Input
+              value={formData.equipment_id}
+              onChange={(e) => setFormData({ ...formData, equipment_id: e.target.value })}
+              disabled={!canEditField('equipment_id')}
+              placeholder="Equipment ID (GUID or display ID)"
+            />
+          ) : (
+            <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
+              {workOrder.equipment ? (
+                <>
+                  <span className="font-medium">{workOrder.equipment.name}</span>
+                  <span className="text-gray-500 ml-2">({workOrder.equipment.display_id})</span>
+                </>
+              ) : (
+                <span className="text-gray-400">No equipment assigned</span>
+              )}
+            </div>
+          )}
+        </div>
 
         {isAdmin && (
           <div>

@@ -5,8 +5,11 @@ import {
   getWorkOrderTool,
   createWorkOrderTool,
   updateWorkOrderTool,
-  formatWorkOrdersTool,
 } from '../tools/work-order-tools';
+import {
+  listEquipmentTool,
+  getEquipmentTool,
+} from '../tools/equipment-tools';
 import {
   listUsersTool,
   findUserTool,
@@ -19,46 +22,38 @@ This is a loose human-in-the-loop approach to reduce mistakes during creation.
 To always enforce it we can add a new tool which requests to confirm or cancel when creating a work order
 We can use the suspend/resume feature from Mastra to implement this. */
 
-const SYSTEM_PROMPT = `You are an AI assistant for manufacturing technicians. Be concise and help with work orders.
+const SYSTEM_PROMPT = `You are a helpful AI assistant for manufacturing technicians. Be concise and accurate.
+
+**Your Role:**
+Help technicians manage work orders and equipment. Answer questions, retrieve information, create and update work orders, and provide equipment details.
 
 **Available Tools:**
-- list-wo-tool: List/search all work orders (can filter by status, priority, or search by title/description)
-- get-wo-tool: Get a specific work order by display ID (e.g., WO-ACME-20251031-001)
-- create-wo-tool: Create a new work order
-- update-wo-tool: Update an existing work order by display ID
-- format-wo-tool: Format work order data into readable tables (ALWAYS use this to display work orders)
-- list-users-tool: List all users in the company with names and emails
-- find-user-tool: Find a user by name or email to get their ID for assignments
+Work Orders:
+- list-wo-tool: List/search by status, priority, search term, or equipment_id
+- get-wo-tool: Get details by display ID (e.g., WO-ACME-20251031-001)
+- create-wo-tool: Create new work order (requires title and description)
+- update-wo-tool: Update by display ID
 
-**Critical Rules:**
+Equipment:
+- list-eq-tool: List/search by name, type, or manufacturer
+- get-eq-tool: Get details by display ID (e.g., EQ-ACME-PUMP-001)
 
-1. **Always Format Work Orders:**
-   - After fetching work orders (list/get/create/update), ALWAYS call format-wo-tool to display them
-   - format-wo-tool can handle both single work orders and arrays of work orders
-   - NEVER show raw JSON data to users
-   - The format tool returns the final formatted output - do not regenerate or duplicate it
+Users:
+- list-users-tool: List all company users
+- find-user-tool: Find user by name or email for assignments
 
-2. **Work with Titles/Names, Not IDs:**
-   - When users mention work orders by title, use list-wo-tool with search parameter first
-   - When users mention people by name, use find-user-tool automatically
-   - Only show display IDs (WO-XXX-YYYYMMDD-NNN) in formatted lists
-   - NEVER expose internal UUIDs to users
+**Responsibilities:**
+- Title and description are required when creating work orders - ask if not provided.
+- When talking about work orders, have the equipment information ready if available.
 
-3. **Creating Work Orders:**
-   - Title and description are REQUIRED - ask if missing
-   - Ask for priority, due date if not provided
-   - Use find-user-tool automatically when user mentions assignment by name
-   - Always format the created work order with format-wo-tool
+**Guidelines:**
+- When listing or filtering data, use tool parameters first (status, priority, search, equipment_id)
+- For complex filtering not supported by parameters, analyze the raw data returned by tools
+- When users mention people, equipment, or workorder by name, use tools to get their ID if needed. Don't ask users for internal IDs directly.
+- ALWAYS Use display IDs (WO-XXX, EQ-XXX) when showing information to users, never internal UUIDs
+- You cannot delete work orders - direct users to the Work Orders tab for deletion`;
 
-4. **Deleting Work Orders:**
-   - You CANNOT delete work orders
-   - Direct users to manually delete through the Work Orders tab
-   - Tell them only administrators can delete
 
-5. **Multi-turn Conversations:**
-   - Remember context from previous messages in the conversation
-   - Use "it" or "that work order" to refer to recently discussed items
-   - Maintain continuity across multiple requests`;
 
 
 // Create the technician assistant agent with Mastra Memory
@@ -71,7 +66,8 @@ export const technicianAgent = new Agent({
     getWO: getWorkOrderTool,
     createWO: createWorkOrderTool,
     updateWO: updateWorkOrderTool,
-    formatWO: formatWorkOrdersTool,
+    listEQ: listEquipmentTool,
+    getEQ: getEquipmentTool,
     listUsers: listUsersTool,
     findUser: findUserTool,
   },
@@ -85,8 +81,9 @@ export const technicianAgent = new Agent({
     // TODO: Add embedder when enabling semantic recall
     // embedder: fastembed,
     options: {
-      // Keep last 10 messages for conversation context
-      lastMessages: 10,
+      // Keep last 20 messages for better conversation context
+      // This allows follow-up questions like "which have equipment?" without re-querying DB
+      lastMessages: 20,
 
       // Enable working memory for complex multi-turn conversations
       workingMemory: {
