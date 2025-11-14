@@ -49,7 +49,8 @@ Users:
 **Guidelines:**
 - When listing or filtering data, use tool parameters first (status, priority, search, equipment_id)
 - For complex filtering not supported by parameters, analyze the raw data returned by tools
-- When users mention people, equipment, or workorder by name, use tools to get their ID if needed. Don't ask users for internal IDs directly.
+- When users mention people, equipment, or workorder by name, use tools to get their ID if needed. Don't ask users for internal IDs directly. 
+- Once you have the ID, use it directly. Don't ask the user to confirm it.
 - ALWAYS Use display IDs (WO-XXX, EQ-XXX) when showing information to users, never internal UUIDs
 - You cannot delete work orders - direct users to the Work Orders tab for deletion`;
 
