@@ -35,10 +35,10 @@ export async function generateTTS(
   } = options;
 
   try {
-    // Get Google Voice API key from environment
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+    // Get Google Voice API key from environment (server-only)
+    const apiKey = process.env.GOOGLE_CLOUD_SPEECH_API_KEY;
     if (!apiKey) {
-      console.warn('NEXT_PUBLIC_GOOGLE_API_KEY not configured, skipping TTS');
+      console.warn('GOOGLE_CLOUD_SPEECH_API_KEY not configured, skipping TTS');
       return { text };
     }
 
@@ -115,5 +115,5 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
  * @returns true if TTS can be used, false otherwise
  */
 export function isTTSAvailable(): boolean {
-  return !!process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+  return !!process.env.GOOGLE_CLOUD_SPEECH_API_KEY;
 }

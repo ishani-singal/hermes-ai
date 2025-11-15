@@ -83,7 +83,7 @@ supabase db push   # To push migrations to existing database
 - Click stream button again to stop
 
 **Requirements for Voice Output:**
-- Set `NEXT_PUBLIC_GOOGLE_API_KEY` in `.env.local`
+- Set `GOOGLE_CLOUD_SPEECH_API_KEY` in `.env.local` (server-only, not exposed to frontend)
 - Enable Cloud Text-to-Speech API in Google Cloud Console
 
 ## Documentation
@@ -182,7 +182,7 @@ Ensure the following are set:
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
-- `NEXT_PUBLIC_GOOGLE_API_KEY`: Google Cloud API key (for TTS)
+- `GOOGLE_CLOUD_SPEECH_API_KEY`: Google Cloud API key for TTS (server-only)
 - `INTERNAL_API_BASE_URL`: Internal API URL for server-to-server calls
 
 ## Contributing
