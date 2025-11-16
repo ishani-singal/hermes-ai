@@ -4,6 +4,7 @@ import withPWA from "next-pwa";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  serverExternalPackages: ["pdf-parse"],
 };
 
 export default withPWA({

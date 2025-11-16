@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, File, Download } from 'lucide-react'
+import { Plus, RefreshCw, File, Download, Trash2 } from 'lucide-react'
 import { Document, DocumentListResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,9 +17,13 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null)
 
   const activeCompany = companies.find(uc => uc.company_id === activeCompanyId)
   const canCreate = activeCompany !== undefined
+  const isAdmin = activeCompany?.role === 'admin'
 
   const fetchDocuments = useCallback(async (showRefreshIndicator = false) => {
     try {
@@ -54,6 +58,42 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
     fetchDocuments(true)
   }
 
+  const handleDeleteClick = (doc: Document) => {
+    setDocumentToDelete(doc)
+    setShowDeleteConfirm(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!documentToDelete) return
+
+    try {
+      setDeletingId(documentToDelete.id)
+      setShowDeleteConfirm(false)
+
+      const response = await fetch(`/api/documents/${documentToDelete.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete document')
+      }
+
+      // Remove from local state
+      setDocuments(prev => prev.filter(d => d.id !== documentToDelete.id))
+      setDocumentToDelete(null)
+    } catch (err) {
+      console.error('Error deleting document:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete document')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setShowDeleteConfirm(false)
+    setDocumentToDelete(null)
+  }
+
   const getTypeLabel = (type: string): string => {
     const labels: Record<string, string> = {
       manual: 'Manual',
@@ -71,9 +111,7 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
 
   const getStatusBadgeVariant = (status: string): 'default' | 'success' | 'warning' | 'danger' | 'info' => {
     const variants: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-      uploaded: 'default',
-      processing: 'warning',
-      ready: 'success',
+      uploaded: 'success',
       failed: 'danger',
     }
     return variants[status] || 'default'
@@ -177,7 +215,7 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Scope</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Size</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900 w-20">Action</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -222,7 +260,7 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={getStatusBadgeVariant(doc.status)} size="sm">
-                      {doc.status === 'processing' ? 'Processing...' : doc.status}
+                      {doc.status}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
@@ -231,18 +269,30 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {doc.file_url && doc.status === 'ready' && (
-                      <a
-                        href={doc.file_url}
-                        download
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center p-2 text-brand hover:bg-brand/10 rounded transition-colors"
-                        title="Download document"
-                      >
-                        <Download className="h-4 w-4" />
-                      </a>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {doc.file_url && doc.status === 'uploaded' && (
+                        <a
+                          href={doc.file_url}
+                          download
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center p-2 text-brand hover:bg-brand/10 rounded transition-colors"
+                          title="Download document"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteClick(doc)}
+                          disabled={deletingId === doc.id}
+                          className="inline-flex items-center justify-center p-2 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete document"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -255,6 +305,36 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
       <div className="text-xs text-gray-500 mt-4 text-center">
         Created dates reflect upload time in your local timezone
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && documentToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Delete Document
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete <span className="font-medium">"{documentToDelete.title}"</span>?
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={handleDeleteCancel}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleDeleteConfirm}
+                isLoading={deletingId === documentToDelete.id}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

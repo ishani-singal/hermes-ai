@@ -200,8 +200,6 @@ const RESOURCE_PERMISSIONS: Record<string, ResourcePermissions> = {
       admin: [
         'title',
         'type',
-        'status',
-        'processing_error',
       ],
       editor: ['title'], // Editors can only update title (e.g., fix typos)
       viewer: [],

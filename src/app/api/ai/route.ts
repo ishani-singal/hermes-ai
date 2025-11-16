@@ -30,6 +30,11 @@ export const POST = route()
       runtimeContext.set('user', user);
       runtimeContext.set('cookie', request.headers.get('cookie') || '');
       runtimeContext.set('baseUrl', baseUrl);
+      
+      // Set company ID for RAG operations
+      if (user?.companyId) {
+        runtimeContext.set('companyId', user.companyId);
+      } 
 
       const conversationThreadId = threadId || `thread_${user?.id}_${Date.now()}`;
 

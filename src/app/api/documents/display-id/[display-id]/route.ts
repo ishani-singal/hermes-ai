@@ -66,8 +66,6 @@ export const PATCH = route()
     let body: {
       title?: string;
       type?: string;
-      status?: string;
-      processing_error?: string;
     };
     
     try {
@@ -109,19 +107,10 @@ export const PATCH = route()
       }
     }
 
-    if (body.status !== undefined) {
-      const validStatuses = ['uploaded', 'processing', 'ready', 'failed'];
-      if (!validStatuses.includes(body.status)) {
-        return badRequest(`Status must be one of: ${validStatuses.join(', ')}`);
-      }
-    }
-
     // Prepare update data
     const updateData: Record<string, unknown> = {};
     if (body.title !== undefined) updateData.title = body.title;
     if (body.type !== undefined) updateData.type = body.type;
-    if (body.status !== undefined) updateData.status = body.status;
-    if (body.processing_error !== undefined) updateData.processing_error = body.processing_error;
 
     // Update document using display_id
     const { error: updateError } = await supabase
@@ -164,7 +153,7 @@ export const DELETE = route()
     // Fetch document to get file_url for storage cleanup
     const { data: document, error: fetchError } = await supabase
       .from('documents')
-      .select('file_url')
+      .select('id, file_url')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId)
       .maybeSingle();
@@ -200,7 +189,15 @@ export const DELETE = route()
         });
     }
 
-    // TODO: Trigger background job to remove document vectors from Pinecone
+    // Delete document vectors from Pinecone (best effort)
+    try {
+      const { deleteDocumentVectors } = await import('@/lib/pinecone/cleanup');
+      await deleteDocumentVectors(document.id);
+      console.log(`[Delete] Removed vectors for document ${document.id} from Pinecone`);
+    } catch (err) {
+      console.warn('Failed to delete vectors from Pinecone:', err);
+      // Don't fail the request - document record is already deleted
+    }
 
     return success({ 
       success: true, 

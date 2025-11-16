@@ -4,7 +4,9 @@
 
 export type DocumentType = 'manual' | 'safety' | 'sop' | 'troubleshooting' | 'other';
 export type DocumentScope = 'company' | 'equipment';
-export type DocumentStatus = 'uploaded' | 'processing' | 'ready' | 'failed';
+// Document status tracks upload/storage status only
+// RAG indexing happens in background and doesn't affect document availability
+export type DocumentStatus = 'uploaded' | 'failed';
 
 export interface Document {
   id: string;
@@ -18,7 +20,6 @@ export interface Document {
   file_size: number;
   page_count?: number;
   status: DocumentStatus;
-  processing_error?: string;
   archived_at?: string; // null if not archived, ISO timestamp if archived
   archive_reason?: string; // e.g., 'equipment_deleted', 'manual_archive'
   created_at: string;
@@ -43,13 +44,6 @@ export interface DocumentUploadResponse {
   documentId: string;
   status: DocumentStatus;
   message: string;
-}
-
-export interface DocumentStatusResponse {
-  id: string;
-  status: DocumentStatus;
-  progress?: number;
-  error?: string;
 }
 
 export interface DocumentListFilters {
