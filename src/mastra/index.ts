@@ -2,7 +2,7 @@ import { Mastra } from '@mastra/core';
 import { technicianAgent } from './agents/technician-assistant-agent';
 import { voiceFormatterAgent } from './agents/voice-formatter-agent';
 import { assistantWorkflow } from './workflows/assistant-workflow';
-import { storage } from './storage';
+import { postgres } from './storage';
 
 export const mastra = new Mastra({
   agents: { 
@@ -16,5 +16,5 @@ export const mastra = new Mastra({
   observability: process.env.NODE_ENV === 'development' ? {
     default: { enabled: true }, // View traces in Mastra Studio locally
   } : undefined,
-  storage, // Use shared storage instance
+  storage: postgres // Use shared storage instance
 });

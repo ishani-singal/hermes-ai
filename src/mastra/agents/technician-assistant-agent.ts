@@ -15,7 +15,9 @@ import {
   findUserTool,
 } from '../tools/user-tools';
 import { searchDocumentsTool } from '../tools/document-tools';
-import { storage } from '../storage';
+import { postgres } from '../storage'
+import { vector } from '../storage';
+import { embedder } from '../embedding';
 
 /* This is the system prompt for the technician assistant agent.
 Right now we are prompting the agent to ask for confirmation when creating a work order.
@@ -27,7 +29,12 @@ const SYSTEM_PROMPT = `You are a helpful AI assistant for manufacturing technici
 
 **Your Role:**
 Help technicians manage work orders and equipment, maintain assets, resolve issues, and log maintenance tasks.
-You have access to specialized tools and working memory to maintain context across the conversation.
+You have access to specialized tools, working memory, and semantic recall to maintain context across conversations.
+
+**Memory System:**
+- You automatically receive relevant past conversations when users ask questions
+- Reference recalled information naturally without announcing you're doing so
+- If recalled context answers the user's question, use it directly in your response
 
 **Available Tools:**
 Work Orders:
@@ -93,22 +100,24 @@ export const technicianAgent = new Agent({
   },
   memory: new Memory({
     // Storage configuration - use shared storage instance
-    storage,
+    storage: postgres,
     // Vector store for future semantic recall (without pgvector extension requirement)
-    // vector: new PgVector({
-    //  connectionString: process.env.DATABASE_URL || '',
-    // }),
-    // TODO: Add embedder when enabling semantic recall
-    // embedder: fastembed,
+    // TODO: Type assertion workaround for Mastra/Pinecone incompatibility
+    // PineconeVector has a narrower VectorFilter type (PineconeVectorFilter) that doesn't
+    // match Memory's generic VectorFilter type. This is a type system incompatibility
+    // between @mastra/core and @mastra/pinecone. No documented fix exists yet.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vector: vector as any,
+    embedder: embedder,
+    // Memory
     options: {
       // Keep last 20 messages for better conversation context
-      // This allows follow-up questions like "which have equipment?" without re-querying DB
       lastMessages: 20,
 
       // Enable working memory for complex multi-turn conversations
       workingMemory: {
         enabled: true,
-        scope: 'thread',
+        scope: 'thread',  // Working memory is thread-scoped (resets per thread)
         template: `# Conversation Context
 
 ## Equipment Discussed
@@ -133,9 +142,13 @@ export const technicianAgent = new Agent({
         generateTitle: true,
       },
       
-      // TODO: Semantic recall will be added in the future
+      // Semantic recall: retrieve similar messages across ALL threads for the same user
       // Requires embedder configuration above
-      semanticRecall: false,
+      semanticRecall: {
+        scope: 'resource',  // Resource-scoped (user-based) - recalls across all user's threads
+        topK: 5,            // Retrieve top 5 most similar messages
+        messageRange: 3     // Include 3 messages before/after for context
+      },
     },
   }),
 });
