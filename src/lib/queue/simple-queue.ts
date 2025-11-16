@@ -8,9 +8,9 @@
  * For production, consider migrating to Redis-backed queue.
  */
 
-type JobHandler<T = any> = (data: T) => Promise<void>;
+type JobHandler<T = unknown> = (data: T) => Promise<void>;
 
-interface Job<T = any> {
+interface Job<T = unknown> {
   id: string;
   data: T;
   attempts: number;
@@ -26,7 +26,7 @@ interface QueueOptions {
   retryDelay?: number; // milliseconds
 }
 
-export class SimpleQueue<T = any> {
+export class SimpleQueue<T = unknown> {
   private queue: Job<T>[] = [];
   private processing = new Set<string>();
   private handler: JobHandler<T>;

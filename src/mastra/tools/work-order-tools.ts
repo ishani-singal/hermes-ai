@@ -379,7 +379,7 @@ export const createWorkOrderTool = createTool({
           try {
             // Convert local date to UTC using timezone helper
             dueDate = localDateToUTC(dueDate);
-          } catch (err) {
+          } catch {
             return { ok: false, error: `Invalid date format: ${dueDate}. Use YYYY-MM-DD format.` };
           }
         }
@@ -455,7 +455,7 @@ export const updateWorkOrderTool = createTool({
           try {
             // Convert local date to UTC using timezone helper
             updatePayload.due_date = localDateToUTC(updatePayload.due_date);
-          } catch (err) {
+          } catch {
             return { ok: false, error: `Invalid date format: ${updatePayload.due_date}. Use YYYY-MM-DD format.` };
           }
         }

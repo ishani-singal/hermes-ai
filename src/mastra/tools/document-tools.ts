@@ -56,14 +56,15 @@ export const searchDocumentsTool = createTool({
     console.log('[SearchDocsTool] Equipment ID:', equipmentId);
     console.log('[SearchDocsTool] Document Type:', documentType);
     console.log('[SearchDocsTool] TopK:', topK);
-    console.log('[SearchDocsTool] Runtime Context keys:', Array.from((runtimeContext as any).entries?.() || []).map((e: any) => e[0]));
+    console.log('[SearchDocsTool] Runtime Context keys:', Array.from((runtimeContext as unknown as Map<string, unknown>).entries?.() || []).map((e: [string, unknown]) => e[0]));
     
     let companyId = runtimeContext.get('companyId') as string;
     
     // Fallback: try to extract companyId from other potential locations
     if (!companyId) {
       console.warn('[SearchDocsTool] companyId not found in runtimeContext, checking alternatives...');
-      companyId = (runtimeContext as any).companyId || (runtimeContext as any).contextData?.companyId;
+      const ctx = runtimeContext as unknown as { companyId?: string; contextData?: { companyId?: string } };
+      companyId = ctx.companyId || ctx.contextData?.companyId || '';
     }
     
     if (!companyId) {
@@ -80,7 +81,7 @@ export const searchDocumentsTool = createTool({
     
     try {
       // If equipmentId is a display ID, we need to resolve it to UUID
-      let resolvedEquipmentId = equipmentId;
+      const resolvedEquipmentId = equipmentId;
       if (equipmentId && equipmentId.startsWith('EQ-')) {
         // This would require a supabase call to resolve display_id -> id
         // For now, we'll pass it as-is and let the search handle it

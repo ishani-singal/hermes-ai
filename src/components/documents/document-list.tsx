@@ -314,7 +314,7 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
               Delete Document
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              Are you sure you want to delete <span className="font-medium">"{documentToDelete.title}"</span>?
+              Are you sure you want to delete <span className="font-medium">&quot;{documentToDelete.title}&quot;</span>?
               This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">

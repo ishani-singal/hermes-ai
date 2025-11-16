@@ -139,7 +139,7 @@ export const POST = route()
     let formData: FormData;
     try {
       formData = await request.formData();
-    } catch (error) {
+    } catch {
       return badRequest('Invalid form data');
     }
 

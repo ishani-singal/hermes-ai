@@ -13,11 +13,6 @@ import { namespace } from '@/lib/pinecone/client';
 import { parsePDF } from './parsers/pdf-parser';
 import { parseImage } from './parsers/image-parser';
 import { parseVideo } from './parsers/video-parser';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // ============================================
 // TYPES
@@ -42,7 +37,7 @@ export interface IndexContentParams {
   companyId: string;
   fileUrl?: string;
   content?: string;  // Pre-extracted text (for chat conversations)
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface SearchParams {
@@ -114,8 +109,8 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
     try {
       console.log(`[RAG] Preparing ${chunks.length} records for Pinecone`);
       
-      const records = chunks.map((chunk: any, idx: number) => {
-        const baseRecord: Record<string, any> = {
+      const records = chunks.map((chunk: { text: string }, idx: number) => {
+        const baseRecord: Record<string, string | number> = {
           _id: `doc-${documentId}-chunk-${idx}`,
           text: chunk.text, // Field for serverless inference (default field_map)
           company_id: companyId,
@@ -140,7 +135,8 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
 
       // Step 4: Upsert to Pinecone (serverless inference will embed the text)
       console.log(`[RAG] Upserting ${records.length} records to Pinecone`);
-      await namespace.upsertRecords(records);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await namespace.upsertRecords(records as any);
 
       console.log(`[RAG] Document indexing complete: ${documentId}`);
     } catch (ragError) {
@@ -195,7 +191,7 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
     console.log(`[RAG] Generated ${chunks.length} chunks for ${type}`);
 
     // Step 3: Prepare records with raw text for serverless inference
-    const records = chunks.map((chunk: any, idx: number) => ({
+    const records = chunks.map((chunk: { text: string }, idx: number) => ({
       _id: `${type}-${resourceId}-chunk-${idx}`,
       text: chunk.text, // Field for serverless inference
       company_id: companyId,
@@ -279,7 +275,7 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
     console.log(`[RAG] Searching for: "${query.substring(0, 100)}..." (company: ${companyId})`);
 
     // Build filter for Pinecone query
-    const filter: Record<string, any> = {
+    const filter: Record<string, { $eq: string }> = {
       company_id: { $eq: companyId },
     };
 
@@ -293,7 +289,11 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
 
     // For serverless inference, query with text using search_records endpoint
     // Using searchRecords method which accepts query text directly  
-    const searchParams: any = {
+    const searchParams: {
+      query: { topK: number; inputs: { text: string } };
+      fields: string[];
+      filter?: Record<string, { $eq: string }>;
+    } = {
       query: {
         topK,
         inputs: { text: query }, // Raw query text - Pinecone will embed it via serverless inference
@@ -318,18 +318,18 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
         continue;
       }
 
-      const fields = hit.fields as any;
+      const fields = hit.fields as Record<string, unknown>;
 
       results.push({
         text: typeof fields.text === 'string' ? fields.text : '',
-        documentTitle: fields.document_title,
-        documentType: fields.document_type,
-        pageNumber: fields.page_number,
+        documentTitle: typeof fields.document_title === 'string' ? fields.document_title : undefined,
+        documentType: typeof fields.document_type === 'string' ? fields.document_type : undefined,
+        pageNumber: typeof fields.page_number === 'number' ? fields.page_number : undefined,
         score: hit._score ?? 0,
-        resourceId: fields.resource_id,
-        resourceType: fields.resource_type,
-        equipmentId: fields.equipment_id,
-        equipmentName: fields.equipment_name,
+        resourceId: typeof fields.resource_id === 'string' ? fields.resource_id : '',
+        resourceType: (typeof fields.resource_type === 'string' ? fields.resource_type : 'document') as ContentType,
+        equipmentId: typeof fields.equipment_id === 'string' ? fields.equipment_id : undefined,
+        equipmentName: typeof fields.equipment_name === 'string' ? fields.equipment_name : undefined,
       });
     }
 
