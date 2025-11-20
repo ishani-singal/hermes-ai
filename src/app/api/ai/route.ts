@@ -12,7 +12,7 @@ export const POST = route()
       const { user } = context;
 
       const body = await request.json();
-      const { message, threadId, resourceId, streamMode = false } = body;
+      const { message, threadId, streamMode = false } = body;
 
       console.log('[AI] Received request:', { userId: user?.id, streamMode, messageLength: message?.length });
 
@@ -48,7 +48,7 @@ export const POST = route()
           message,
           mode,
           threadId: conversationThreadId,
-          resourceId: resourceId || user?.id,
+          resourceId: user?.id,
         },
         runtimeContext,
       });

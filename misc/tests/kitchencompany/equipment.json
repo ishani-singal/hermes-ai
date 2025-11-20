@@ -1,0 +1,100 @@
+[
+  {
+    "name": "GE Microwave",
+    "type": "microwave",
+    "manufacturer": "GE Appliances",
+    "model": "Over-the-Range Model (example)",
+    "serial_number": "GE-MW-0001",
+    "location": "Kitchen - Main",
+    "metadata": {
+      "purchase_date": "2024-06-15",
+      "warranty_months": 12,
+      "notes": "Over-the-range microwave, wall-mounted above oven",
+      "manual_url": "https://www.geappliances.com/service-and-support/"
+    }
+  },
+  {
+    "name": "GE Oven",
+    "type": "oven",
+    "manufacturer": "GE Appliances",
+    "model": "Single Wall Oven (example)",
+    "serial_number": "GE-OV-0001",
+    "location": "Kitchen - Main",
+    "metadata": {
+      "purchase_date": "2024-06-15",
+      "warranty_months": 12,
+      "notes": "Electric wall oven",
+      "manual_url": "https://www.geappliances.com/service-and-support/"
+    }
+  },
+  {
+    "name": "Instant Pot Duo",
+    "type": "multicooker",
+    "manufacturer": "Instant Brands",
+    "model": "Duo 7-in-1 (6 qt)",
+    "serial_number": "IP-DUO-6001",
+    "location": "Kitchen - Counter",
+    "metadata": {
+      "purchase_date": "2023-11-02",
+      "warranty_months": 24,
+      "notes": "6-quart Instant Pot Duo (pressure cooker / slow cooker)",
+      "manual_url": "https://instantpot.com/"
+    }
+  },
+  {
+    "name": "Vitamix 5200",
+    "type": "blender",
+    "manufacturer": "Vitamix",
+    "model": "5200",
+    "serial_number": "VM-5200-001",
+    "location": "Kitchen - Counter",
+    "metadata": {
+      "purchase_date": "2022-08-20",
+      "warranty_months": 48,
+      "notes": "Standard Vitamix 5200 with variable speed",
+      "manual_url": "https://www.vitamix.com/us/en_us/support/"
+    }
+  },
+  {
+    "name": "Cuisinart Ice Cream Maker",
+    "type": "ice-cream-maker",
+    "manufacturer": "Cuisinart",
+    "model": "ICE-21 (example)",
+    "serial_number": "CU-IC-1001",
+    "location": "Kitchen - Pantry",
+    "metadata": {
+      "purchase_date": "2024-01-10",
+      "warranty_months": 18,
+      "notes": "2-quart ice cream maker (model varies)",
+      "manual_url": "https://www.cuisinart.com/support/"
+    }
+  },
+  {
+    "name": "Cosori Dehydrator",
+    "type": "dehydrator",
+    "manufacturer": "Cosori",
+    "model": "CP-DR (example)",
+    "serial_number": "CS-DR-2001",
+    "location": "Kitchen - Pantry",
+    "metadata": {
+      "purchase_date": "2023-05-05",
+      "warranty_months": 12,
+      "notes": "Countertop dehydrator",
+      "manual_url": "https://www.cosori.com/pages/support"
+    }
+  },
+  {
+    "name": "Gaggia Classic Evo Pro",
+    "type": "espresso-machine",
+    "manufacturer": "Gaggia",
+    "model": "Classic Evo Pro",
+    "serial_number": "GG-ESP-3001",
+    "location": "Kitchen - Coffee Station",
+    "metadata": {
+      "purchase_date": "2024-03-12",
+      "warranty_months": 24,
+      "notes": "Semi-automatic espresso machine",
+      "manual_url": "https://www.gaggia.com/"
+    }
+  }
+]

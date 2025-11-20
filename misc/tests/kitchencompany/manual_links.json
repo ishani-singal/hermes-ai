@@ -1,0 +1,65 @@
+{
+  "GE Microwave": {
+    "search_query": "GE Microwave user manual site:geappliances.com",
+    "notes": "Use GE Appliances support/manuals page; search by model number found on unit label",
+    "example_urls": [
+      "https://www.geappliances.com/service-and-support/"
+    ],
+    "direct_url": "https://www.geappliances.com/content/older-pdfs/79400391.PDF",
+    "saved_file": "GE_Microwave_79400391.pdf"
+  },
+  "GE Oven": {
+    "search_query": "GE oven user manual site:geappliances.com",
+    "notes": "Check GE Appliances support for wall oven model manual",
+    "example_urls": [
+      "https://www.geappliances.com/service-and-support/"
+    ],
+    "direct_url": "https://products.geappliances.com/appliance/gea-specs/JVM7195SKSS/support",
+    "saved_file": "GE_Oven_support.html"
+  },
+  "Instant Pot Duo": {
+    "search_query": "Instant Pot Duo manual PDF",
+    "notes": "Instant Brands support site hosts PDF manuals; model often includes 'Duo' and capacity (3,6,8 qt)",
+    "example_urls": [
+      "https://instantpot.com/"
+    ],
+    "direct_url": "https://instantpot.co.uk/wp-content/uploads/2023/07/Duo_Manual-2021.pdf",
+    "saved_file": "InstantPot_Duo_Manual.pdf"
+  },
+  "Vitamix 5200": {
+    "search_query": "Vitamix 5200 manual PDF",
+    "notes": "Vitamix support/owner's manual pages usually contain downloadable PDFs",
+    "example_urls": [
+      "https://www.vitamix.com/us/en_us/support/"
+    ],
+    "direct_url": "https://www.vitamix.com/content/dam/vitamix/files/product-manuals/5200%20Owners%20Manual.pdf",
+    "saved_file": "Vitamix_5200_Manual.pdf"
+  },
+  "Cuisinart Ice Cream Maker": {
+    "search_query": "Cuisinart ice cream maker manual model ICE-21 PDF",
+    "notes": "Cuisinart support site provides manuals by model number",
+    "example_urls": [
+      "https://www.cuisinart.com/support/"
+    ],
+    "direct_url": "https://www.cuisinart.ca/on/demandware.static/-/Sites-ca-cuisinart-Library/en_CA/dw64971b9c/Instruction%20Booklet/ICE-21C_en.pdf",
+    "saved_file": "Cuisinart_ICE21_Manual.pdf"
+  },
+  "Cosori Dehydrator": {
+    "search_query": "Cosori dehydrator manual",
+    "notes": "Cosori product support pages contain user manuals and FAQ",
+    "example_urls": [
+      "https://www.cosori.com/pages/support"
+    ],
+    "direct_url": "https://files.vesync.com/desc/COSORI_CFD_P101_SUS_USER_MANUAL.pdf",
+    "saved_file": "Cosori_Dehydrator_Manual.pdf"
+  },
+  "Gaggia Classic Evo Pro": {
+    "search_query": "Gaggia Classic Evo Pro manual PDF",
+    "notes": "Gaggia / Saeco support pages host user guides for Classic series",
+    "example_urls": [
+      "https://www.gaggia.com/"
+    ],
+    "direct_url": "https://www.gaggia.com/app/uploads/2023/07/4219-465-10461-MANUAL-GAG.-CLASSIC-USA-Rev-00_New_Classic_Evo.pdf",
+    "saved_file": "Gaggia_Classic_Evo_Manual.pdf"
+  }
+}
