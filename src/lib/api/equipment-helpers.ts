@@ -71,8 +71,9 @@ export async function getEquipmentWithDocuments(
 
   // Get associated documents (both equipment-specific and company-wide)
   const { data: documents } = await supabase
-    .from('documents')
+    .from('files')
     .select('*')
+    .eq('bucket_id', 'documents')
     .eq('company_id', companyId)
     .or(`equipment_id.eq.${equipmentId},scope.eq.company`)
     .eq('archived_at', null) // Exclude archived documents

@@ -1,4 +1,8 @@
-import { Send, Mic, Radio, StopCircle } from 'lucide-react'
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { Send, Mic, Radio, StopCircle, Plus, Camera, Image } from 'lucide-react'
+import { CameraModal } from '@/components/ui/camera-modal'
 
 type ChatInputProps = {
   input: string
@@ -13,6 +17,7 @@ type ChatInputProps = {
   pushToTalkMode: boolean
   isTTSPlaying: boolean
   onStopTTS: () => void
+  onPhotoSelect?: (file: File) => void
 }
 
 export function ChatInput({
@@ -28,7 +33,32 @@ export function ChatInput({
   pushToTalkMode,
   isTTSPlaying,
   onStopTTS,
+  onPhotoSelect,
 }: ChatInputProps) {
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [showCameraModal, setShowCameraModal] = useState(false)
+  const [hasCameraDevice, setHasCameraDevice] = useState<boolean | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Check for camera availability on mount
+  useEffect(() => {
+    const checkCamera = async () => {
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          const videoDevices = devices.filter(device => device.kind === 'videoinput')
+          setHasCameraDevice(videoDevices.length > 0)
+        } else {
+          setHasCameraDevice(false)
+        }
+      } catch {
+        // If we can't check, assume camera might be available
+        setHasCameraDevice(true)
+      }
+    }
+    void checkCamera()
+  }, [])
+  
   const placeholderText = listening ? 'You can start talking now' : 'Type your question here'
   
   // Disable send button when:
@@ -38,23 +68,126 @@ export function ChatInput({
   // 4. TTS is playing
   const isSendDisabled = loading || streamMode || (listening && pushToTalkMode) || isTTSPlaying
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && onPhotoSelect) {
+      onPhotoSelect(file)
+      setShowAttachMenu(false)
+    }
+    // Reset input so same file can be selected again
+    if (e.target) {
+      e.target.value = ''
+    }
+  }
+
+  const handleCameraClick = () => {
+    if (hasCameraDevice === false) {
+      alert('No camera detected on this device.')
+      setShowAttachMenu(false)
+      return
+    }
+    setShowCameraModal(true)
+    setShowAttachMenu(false)
+  }
+
+  const handleCameraCapture = (file: File) => {
+    if (onPhotoSelect) {
+      onPhotoSelect(file)
+    }
+  }
+
+  const handleGalleryClick = () => {
+    fileInputRef.current?.click()
+    setShowAttachMenu(false)
+  }
+
   return (
     <div className="mt-4">
-      <div className="flex gap-2 items-end">
+      <div className="flex gap-2 items-stretch">
+        {/* Attachment button */}
+        <div className="relative flex items-stretch">
+          <button
+            onClick={() => setShowAttachMenu(!showAttachMenu)}
+            title="Attach photo"
+            className="inline-flex items-center justify-center w-[46px] h-[46px] rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+            aria-label="Attach photo"
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+          
+          {/* Attachment menu */}
+          {showAttachMenu && (
+            <>
+              <div 
+                className="fixed inset-0 z-10" 
+                onClick={() => setShowAttachMenu(false)}
+              />
+              <div className="absolute bottom-full left-0 mb-2 bg-white rounded-md shadow-lg border border-gray-200 py-1 min-w-[180px] z-20">
+                <button
+                  onClick={handleCameraClick}
+                  disabled={hasCameraDevice === false}
+                  className={
+                    "w-full px-4 py-2 text-left text-sm flex items-center gap-3 " +
+                    (hasCameraDevice === false 
+                      ? "text-gray-400 cursor-not-allowed" 
+                      : "text-gray-700 hover:bg-gray-50")
+                  }
+                  title={hasCameraDevice === false ? "No camera detected" : "Take a photo"}
+                >
+                  <Camera className="h-4 w-4" />
+                  Take Photo
+                </button>
+                <button
+                  onClick={handleGalleryClick}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                >
+                  <Image className="h-4 w-4" />
+                  Choose from Gallery
+                </button>
+              </div>
+            </>
+          )}
+          
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+            aria-label="Gallery input"
+          />
+        </div>
+
+        <CameraModal 
+          open={showCameraModal} 
+          onOpenChange={setShowCameraModal}
+          onCapture={handleCameraCapture}
+        />
+
+        {/* Text input - now with word wrap */}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholderText}
-          className="flex-1 min-h-[54px] p-3 rounded-md border border-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-brand"
+          rows={1}
+          className="flex-1 h-[46px] min-h-[46px] max-h-[200px] py-3 px-3 rounded-md border border-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-brand overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#cbd5e1_transparent]"
+          onInput={(e) => {
+            const target = e.target as HTMLTextAreaElement
+            target.style.height = '46px'
+            target.style.height = Math.min(target.scrollHeight, 200) + 'px'
+          }}
           aria-label="Chat message"
         />
-        <div className="flex items-center gap-2">
+        
+        {/* Action buttons - all same height */}
+        <div className="flex items-stretch gap-2">
           {isTTSPlaying && (
             <button
               onClick={onStopTTS}
               title="Stop audio playback"
-              className="inline-flex items-center justify-center p-3 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors animate-pulse"
+              className="inline-flex items-center justify-center w-[46px] h-[46px] rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors animate-pulse"
             >
               <StopCircle className="h-5 w-5" />
             </button>
@@ -63,7 +196,7 @@ export function ChatInput({
             onClick={onSend}
             disabled={isSendDisabled}
             title={isSendDisabled ? (streamMode ? 'Send disabled in continuous mode' : 'Finish speaking first') : 'Send message'}
-            className="inline-flex items-center justify-center p-3 rounded-md bg-brand text-white hover:brightness-110 disabled:opacity-60 transition-all"
+            className="inline-flex items-center justify-center w-[46px] h-[46px] rounded-md bg-brand text-white hover:brightness-110 disabled:opacity-60 transition-all"
           >
             <Send className="h-5 w-5" />
           </button>
@@ -71,7 +204,7 @@ export function ChatInput({
             onClick={onMicClick}
             title={listening && pushToTalkMode ? 'Stop voice input' : 'Start voice input (push-to-talk)'}
             className={
-              'inline-flex items-center justify-center p-3 rounded-md border transition-colors ' +
+              'inline-flex items-center justify-center w-[46px] h-[46px] rounded-md border transition-colors ' +
               (listening && pushToTalkMode ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
             }
           >
@@ -83,10 +216,10 @@ export function ChatInput({
             onClick={onStreamClick}
             title={streamMode && listening ? 'Stop continuous conversation' : 'Start continuous conversation'}
             className={
-              'inline-flex items-center justify-center p-3 rounded-md border transition-colors ' +
+              'inline-flex items-center justify-center w-[46px] h-[46px] rounded-md transition-colors ' +
               (streamMode && listening
-                ? 'bg-green-600 text-white border-green-600'
-                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
+                ? 'bg-purple-600 text-white border-2 border-purple-700 shadow-lg shadow-purple-500/50'
+                : 'bg-purple-100 text-purple-700 border-2 border-purple-300 hover:bg-purple-200')
             }
           >
             <span className={streamMode && listening ? 'animate-pulse' : ''}>

@@ -48,6 +48,7 @@ export interface DocumentUploadResponse {
 
 export interface DocumentListFilters {
   equipment_id?: string;
+  work_order_id?: string;
   type?: DocumentType;
   scope?: DocumentScope;
   status?: DocumentStatus;

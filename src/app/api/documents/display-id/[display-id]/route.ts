@@ -28,8 +28,9 @@ export const GET = route()
 
     // Fetch document using display_id
     const { data, error } = await supabase
-      .from('documents')
+      .from('files')
       .select('*')
+      .eq('bucket_id', 'documents')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId)
       .maybeSingle();
@@ -114,8 +115,9 @@ export const PATCH = route()
 
     // Update document using display_id
     const { error: updateError } = await supabase
-      .from('documents')
+      .from('files')
       .update(updateData)
+      .eq('bucket_id', 'documents')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId);
 
@@ -126,8 +128,9 @@ export const PATCH = route()
 
     // Fetch updated document
     const { data, error } = await supabase
-      .from('documents')
+      .from('files')
       .select('*')
+      .eq('bucket_id', 'documents')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId)
       .maybeSingle();
@@ -152,8 +155,9 @@ export const DELETE = route()
 
     // Fetch document to get file_url for storage cleanup
     const { data: document, error: fetchError } = await supabase
-      .from('documents')
+      .from('files')
       .select('id, file_url')
+      .eq('bucket_id', 'documents')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId)
       .maybeSingle();
@@ -168,8 +172,9 @@ export const DELETE = route()
 
     // Delete document record from database
     const { error: deleteError } = await supabase
-      .from('documents')
+      .from('files')
       .delete()
+      .eq('bucket_id', 'documents')
       .eq('display_id', params['display-id'])
       .eq('company_id', user!.companyId);
 

@@ -13,6 +13,7 @@ import { namespace } from '@/lib/pinecone/client';
 import { parsePDF } from './parsers/pdf-parser';
 import { parseImage } from './parsers/image-parser';
 import { parseVideo } from './parsers/video-parser';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // ============================================
 // TYPES
@@ -83,8 +84,12 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
   } = params;
 
   console.log(`[RAG] Indexing document: ${documentId}`);
+  const supabase = createServiceRoleClient();
 
   try {
+    // Update status to processing
+    await supabase.from('files').update({ processing_status: 'processing' }).eq('id', documentId);
+
     // Step 1: Parse PDF to extract text
     console.log(`[RAG] Parsing PDF from: ${fileUrl}`);
     const text = await parsePDF(fileUrl);
@@ -109,10 +114,15 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
     try {
       console.log(`[RAG] Preparing ${chunks.length} records for Pinecone`);
       
+      // Validate companyId before indexing (required for multi-tenant security)
+      if (!companyId || companyId.trim() === '') {
+        throw new Error('company_id is required for indexing documents');
+      }
+
       const records = chunks.map((chunk: { text: string }, idx: number) => {
         const baseRecord: Record<string, string | number> = {
           _id: `doc-${documentId}-chunk-${idx}`,
-          text: chunk.text, // Field for serverless inference (default field_map)
+          text: chunk.text,
           company_id: companyId,
           resource_id: documentId,
           resource_type: 'document' as ContentType,
@@ -139,16 +149,21 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
       await namespace.upsertRecords(records as any);
 
       console.log(`[RAG] Document indexing complete: ${documentId}`);
+      
+      // Update status to ready
+      await supabase.from('files').update({ processing_status: 'ready' }).eq('id', documentId);
     } catch (ragError) {
       // Log RAG errors but don't fail the document upload
       console.error(`[RAG] Indexing failed for ${documentId} (document still uploaded):`, ragError);
       // Optionally store this error somewhere for later retry
+      await supabase.from('files').update({ processing_status: 'failed' }).eq('id', documentId);
     }
 
   } catch (error) {
     console.error(`[RAG] Error processing document ${documentId}:`, error);
     // Note: RAG indexing failures don't affect document upload status
     // Document remains 'uploaded' and available for download
+    await supabase.from('files').update({ processing_status: 'failed' }).eq('id', documentId);
     throw error;
   }
 }
@@ -163,8 +178,12 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
   const { type, resourceId, companyId, fileUrl, content, metadata } = params;
 
   console.log(`[RAG] Indexing ${type}: ${resourceId}`);
+  const supabase = createServiceRoleClient();
 
   try {
+    // Update status to processing
+    await supabase.from('files').update({ processing_status: 'processing' }).eq('id', resourceId);
+
     // Step 1: Extract text based on content type
     let text: string;
     
@@ -191,15 +210,19 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
     console.log(`[RAG] Generated ${chunks.length} chunks for ${type}`);
 
     // Step 3: Prepare records with raw text for serverless inference
+    if (!companyId || companyId.trim() === '') {
+      throw new Error('company_id is required for indexing content');
+    }
+
     const records = chunks.map((chunk: { text: string }, idx: number) => ({
       _id: `${type}-${resourceId}-chunk-${idx}`,
-      text: chunk.text, // Field for serverless inference
+      text: chunk.text,
       company_id: companyId,
       resource_id: resourceId,
       resource_type: type,
       chunk_index: idx,
       created_at: new Date().toISOString(),
-      ...metadata, // Spread additional metadata
+      ...metadata,
     }));
 
     // Step 4: Upsert to Pinecone (serverless inference will embed the text)
@@ -207,9 +230,13 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
     await namespace.upsertRecords(records);
 
     console.log(`[RAG] ${type} indexing complete: ${resourceId}`);
+    
+    // Update status to ready
+    await supabase.from('files').update({ processing_status: 'ready' }).eq('id', resourceId);
 
   } catch (error) {
     console.error(`[RAG] Error indexing ${type} ${resourceId}:`, error);
+    await supabase.from('files').update({ processing_status: 'failed' }).eq('id', resourceId);
     throw error;
   }
 }
@@ -272,9 +299,14 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
   const { query, companyId, equipmentId, documentType, topK = 3 } = params;
 
   try {
+    // Validate companyId is present (required for multi-tenant security)
+    if (!companyId || companyId.trim() === '') {
+      throw new Error('[RAG Security] company_id is required for all search operations');
+    }
+
     console.log(`[RAG] Searching for: "${query.substring(0, 100)}..." (company: ${companyId})`);
 
-    // Build filter for Pinecone query
+    // Build filter for Pinecone query - company_id is always required
     const filter: Record<string, { $eq: string }> = {
       company_id: { $eq: companyId },
     };
@@ -287,24 +319,22 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
       filter.document_type = { $eq: documentType };
     }
 
-    // For serverless inference, query with text using search_records endpoint
-    // Using searchRecords method which accepts query text directly  
+    // For serverless inference, filter must be inside the query object
     const searchParams: {
-      query: { topK: number; inputs: { text: string } };
+      query: { 
+        topK: number; 
+        inputs: { text: string };
+        filter: Record<string, { $eq: string }>;
+      };
       fields: string[];
-      filter?: Record<string, { $eq: string }>;
     } = {
       query: {
         topK,
-        inputs: { text: query }, // Raw query text - Pinecone will embed it via serverless inference
+        inputs: { text: query },
+        filter: filter,
       },
-      fields: ['text', 'document_title', 'document_type', 'page_number', 'resource_id', 'resource_type', 'equipment_id', 'equipment_name'],
+      fields: ['text', 'document_title', 'document_type', 'page_number', 'resource_id', 'resource_type', 'equipment_id', 'equipment_name', 'company_id'],
     };
-    
-    // Add filter if there are any conditions
-    if (Object.keys(filter).length > 0) {
-      searchParams.filter = filter;
-    }
     
     const searchResults = await namespace.searchRecords(searchParams);
 
@@ -319,6 +349,13 @@ export async function search(params: SearchParams): Promise<SearchResult[]> {
       }
 
       const fields = hit.fields as Record<string, unknown>;
+
+      // Verify company_id matches (defense in depth)
+      const resultCompanyId = fields.company_id as string;
+      if (resultCompanyId && resultCompanyId !== companyId) {
+        console.error(`[RAG Security] CRITICAL: Result company_id mismatch! Expected: ${companyId}, Got: ${resultCompanyId}`);
+        continue;
+      }
 
       results.push({
         text: typeof fields.text === 'string' ? fields.text : '',

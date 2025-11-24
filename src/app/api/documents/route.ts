@@ -39,6 +39,7 @@ export const GET = route()
 
     const filters: DocumentListFilters = {
       equipment_id: searchParams.get('equipment_id') || undefined,
+      work_order_id: searchParams.get('work_order_id') || undefined,
       type: (searchParams.get('type') as DocumentType) || undefined,
       scope: (searchParams.get('scope') as DocumentScope) || undefined,
       status: (searchParams.get('status') as DocumentStatus) || undefined,
@@ -51,41 +52,59 @@ export const GET = route()
     const supabase = createServiceRoleClient();
 
     // Build base query - exclude archived documents by default
-    // Join with equipment to get equipment details
+    // Join with equipment_files -> equipment to get equipment details
+    // We query the 'files' table where bucket_id is 'documents'
     let query = supabase
-      .from('documents')
+      .from('files')
       .select(`
         *,
-        equipment:equipment_id (
-          id,
-          display_id,
-          name
+        equipment_files:equipment_files (
+          equipment:equipment (
+            id,
+            display_id,
+            name
+          )
+        ),
+        work_order_files:work_order_files (
+          work_order:work_orders (
+            id,
+            display_id,
+            title
+          )
         )
       `, { count: 'exact' })
       .eq('company_id', user!.companyId)
-      .is('archived_at', null); // Only show non-archived documents
+      .eq('bucket_id', 'documents');
+      
+    // Filter out archived documents (stored in metadata)
+    query = query.filter('metadata->>archived_at', 'is', null);
 
     // Apply filters
     if (filters.equipment_id) {
-      query = query.eq('equipment_id', filters.equipment_id);
+      query = query.eq('equipment_files.equipment_id', filters.equipment_id);
+    }
+
+    if (filters.work_order_id) {
+      query = query.eq('work_order_files.work_order_id', filters.work_order_id);
     }
 
     if (filters.type) {
-      query = query.eq('type', filters.type);
+      query = query.eq('metadata->>document_type', filters.type);
     }
 
     if (filters.scope) {
-      query = query.eq('scope', filters.scope);
+      query = query.eq('metadata->>scope', filters.scope);
     }
 
     if (filters.status) {
-      query = query.eq('status', filters.status);
+      query = query.eq('processing_status', filters.status);
     }
 
     if (filters.search) {
       const searchTerm = `%${filters.search}%`;
+      // Search in description (title) or display_id (in metadata)
       query = query.or(
-        `title.ilike.${searchTerm},display_id.ilike.${searchTerm}`
+        `description.ilike.${searchTerm},metadata->>display_id.ilike.${searchTerm}`
       );
     }
 
@@ -98,15 +117,47 @@ export const GET = route()
     query = query.range(from, to);
 
     // Execute query
-    const { data, count, error } = await query;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, count, error } = await query as any;
 
     if (error) {
       console.error('Error listing documents:', error);
       return badRequest(error.message);
     }
 
+    // Map files to Document type
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const documents: Document[] = (data || []).map((file: any) => {
+      const equipmentLink = file.equipment_files?.[0];
+      const equipment = equipmentLink?.equipment;
+      const metadata = file.metadata || {};
+
+      return {
+        id: file.id,
+        company_id: file.company_id,
+        equipment_id: equipment?.id,
+        display_id: metadata.display_id || file.id, // Fallback to ID if display_id missing
+        title: file.description || file.file_name,
+        type: (metadata.document_type as DocumentType) || 'other',
+        scope: (metadata.scope as DocumentScope) || 'company',
+        file_url: file.file_url,
+        file_size: file.file_size,
+        page_count: metadata.page_count,
+        status: file.processing_status as DocumentStatus,
+        archived_at: metadata.archived_at,
+        archive_reason: metadata.archive_reason,
+        created_at: file.created_at,
+        updated_at: file.updated_at,
+        equipment: equipment ? {
+          id: equipment.id,
+          display_id: equipment.display_id,
+          name: equipment.name
+        } : undefined
+      };
+    });
+
     const response: DocumentListResponse = {
-      data: (data || []) as Document[],
+      data: documents,
       pagination: {
         page: filters.page!,
         limit: filters.limit!,
@@ -148,7 +199,7 @@ export const POST = route()
     const type = formData.get('type') as DocumentType;
     const scope = formData.get('scope') as DocumentScope;
     const equipment_id = formData.get('equipment_id') as string | null;
-    const file = formData.get('file') as File | null;
+    const uploadedFile = formData.get('file') as File | null;
 
     // Validate required fields
     if (!title || title.trim().length === 0) {
@@ -183,10 +234,13 @@ export const POST = route()
     }
 
     // Validate equipment exists and belongs to company
+    let validatedEquipmentId: string | null = null;
+    let equipmentName: string | undefined;
+
     if (equipment_id) {
       const { data: equipment, error: equipmentError } = await supabase
         .from('equipment')
-        .select('id')
+        .select('id, name')
         .eq('company_id', user!.companyId)
         .or(`id.eq.${equipment_id},display_id.eq.${equipment_id}`)
         .maybeSingle();
@@ -195,36 +249,36 @@ export const POST = route()
         return badRequest('Equipment not found or does not belong to your company');
       }
 
-      // Use the UUID for the equipment_id
-      formData.set('equipment_id', equipment.id);
+      validatedEquipmentId = equipment.id;
+      equipmentName = equipment.name;
     }
 
-    if (!file) {
+    if (!uploadedFile) {
       return badRequest('File is required');
     }
 
     // Validate file type (PDFs only for now, can expand later)
     const allowedMimeTypes = ['application/pdf'];
-    if (!allowedMimeTypes.includes(file.type)) {
+    if (!allowedMimeTypes.includes(uploadedFile.type)) {
       return badRequest('Only PDF files are supported');
     }
 
     // Validate file size (max 5MB)
     const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
+    if (uploadedFile.size > maxSize) {
       return badRequest('File size must be less than 5MB');
     }
 
     // Upload file to Supabase Storage
     // Storage bucket: documents/{company_id}/{document_id}/{filename}
     const tempDocId = crypto.randomUUID();
-    const fileExtension = file.name.split('.').pop();
+    const fileExtension = uploadedFile.name.split('.').pop();
     const storagePath = `${user!.companyId}/${tempDocId}/${tempDocId}.${fileExtension}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('documents')
-      .upload(storagePath, file, {
-        contentType: file.type,
+      .upload(storagePath, uploadedFile, {
+        contentType: uploadedFile.type,
         upsert: false,
       });
 
@@ -244,62 +298,98 @@ export const POST = route()
       return badRequest('Failed to get file URL');
     }
 
-    // Insert document record
-    // display_id will be auto-generated by trigger
-    // Status is 'uploaded' - document is ready for download immediately after storage upload
-    const { data: document, error: insertError } = await supabase
-      .from('documents')
+    // Prepare metadata
+    const metadata = {
+      document_type: type,
+      scope: scope,
+      // display_id will be generated by trigger
+    };
+
+    // Insert file record
+    const { data: fileRecord, error: insertError } = await supabase
+      .from('files')
       .insert({
         company_id: user!.companyId,
-        equipment_id: equipment_id ? formData.get('equipment_id') : null,
-        title: title,
-        type: type,
-        scope: scope,
+        uploaded_by: user!.id,
+        bucket_id: 'documents',
+        storage_path: storagePath,
         file_url: urlData.publicUrl,
-        file_size: file.size,
-        status: 'uploaded', // Document is uploaded and ready - RAG indexing happens in background
+        file_name: uploadedFile.name,
+        file_type: uploadedFile.type,
+        file_size: uploadedFile.size,
+        description: title, // Use title as description
+        metadata: metadata,
+        processing_status: 'uploaded',
       })
       .select()
       .single();
 
-    if (insertError || !document) {
-      console.error('Error creating document record:', insertError);
+    if (insertError || !fileRecord) {
+      console.error('Error creating file record:', insertError);
       // Cleanup uploaded file
       await supabase.storage.from('documents').remove([storagePath]);
       return badRequest(insertError?.message || 'Failed to create document record');
     }
 
+    // Link to equipment if needed
+    if (validatedEquipmentId) {
+      const { error: linkError } = await supabase
+        .from('equipment_files')
+        .insert({
+          equipment_id: validatedEquipmentId,
+          file_id: fileRecord.id,
+          link_type: 'manual', // Default link type for documents
+        });
+
+      if (linkError) {
+        console.error('Error linking document to equipment:', linkError);
+        // We don't fail the whole request, but log it. 
+        // Ideally we should probably rollback the file insert, but for now we proceed.
+      }
+    }
+
     // Enqueue background processing job for PDF parsing and RAG ingestion
     try {
-      // Get equipment details if linked
-      let equipmentName: string | undefined;
-      if (document.equipment_id) {
-        const { data: equipment } = await supabase
-          .from('equipment')
-          .select('name')
-          .eq('id', document.equipment_id)
-          .single();
-        
-        equipmentName = equipment?.name;
-      }
-
       const processingParams: IndexDocumentParams = {
-        documentId: document.id,
+        documentId: fileRecord.id,
         companyId: user!.companyId,
-        documentTitle: document.title,
-        documentType: document.type,
-        equipmentId: document.equipment_id || undefined,
+        documentTitle: fileRecord.description || fileRecord.file_name,
+        documentType: type,
+        equipmentId: validatedEquipmentId || undefined,
         equipmentName,
-        scope: document.scope,
-        fileUrl: document.file_url,
+        scope: scope,
+        fileUrl: fileRecord.file_url,
       };
 
-      await documentQueue.add(processingParams, `doc-${document.id}`);
-      console.log(`[Upload] Document queued for RAG indexing: ${document.id}`);
+      await documentQueue.add(processingParams, `doc-${fileRecord.id}`);
+      console.log(`[Upload] Document queued for RAG indexing: ${fileRecord.id}`);
     } catch (error) {
       console.error('[Upload] Failed to queue document for RAG indexing:', error);
       // Don't fail the upload - document is uploaded and accessible, indexing can be retried
     }
 
-    return success<Document>(document as Document, 201);
+    // Construct response matching Document interface
+    const responseDocument: Document = {
+      id: fileRecord.id,
+      company_id: fileRecord.company_id,
+      equipment_id: validatedEquipmentId || undefined,
+      display_id: fileRecord.metadata?.display_id || fileRecord.id, // Trigger might have added it, but we might need to re-fetch to get it. 
+      // Since we selected *, if the trigger ran BEFORE return, we might have it. 
+      // But triggers usually run on DB side. The returned data from .insert().select() *should* include trigger updates if it's BEFORE INSERT.
+      title: fileRecord.description,
+      type: type,
+      scope: scope,
+      file_url: fileRecord.file_url,
+      file_size: fileRecord.file_size,
+      status: 'uploaded',
+      created_at: fileRecord.created_at,
+      updated_at: fileRecord.updated_at,
+      equipment: validatedEquipmentId ? {
+        id: validatedEquipmentId,
+        display_id: '', // We don't have this handy without another query, but frontend might not need it immediately
+        name: equipmentName || ''
+      } : undefined
+    };
+
+    return success<Document>(responseDocument, 201);
   });

@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { FileUploadForm } from '@/components/common/file-upload-form'
 import { WorkOrder, WorkOrderStatus, WorkOrderPriority, UpdateWorkOrderRequest } from '@/types'
 import { useAuth } from '@/lib/auth/context'
 import { localDateToUTC, utcToLocalDateString } from '@/lib/utils/date-timezone'
-import { Clock } from 'lucide-react'
+import { Clock, Paperclip } from 'lucide-react'
 
 export interface WorkOrderDetailProps {
   workOrder: WorkOrder | null
@@ -41,6 +42,9 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showAttachments, setShowAttachments] = useState(false)
+  const [attachments, setAttachments] = useState<Array<{ id: string; file_url: string; file_name: string; file_type: string; description?: string }>>([])
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
@@ -97,8 +101,31 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
       })
       setIsEditing(false)
       setError(null)
+      setShowAttachments(false)
+      
+      // Load attachments
+      loadAttachments();
     }
   }, [workOrder])
+
+  const loadAttachments = async () => {
+    if (!workOrder) return;
+    
+    setIsLoadingAttachments(true);
+    try {
+      const photosRes = await fetch(`/api/photos?work_order_id=${workOrder.id}`);
+      const docsRes = await fetch(`/api/documents?work_order_id=${workOrder.id}`);
+      
+      const photos = photosRes.ok ? (await photosRes.json()).data : [];
+      const docs = docsRes.ok ? (await docsRes.json()).data : [];
+      
+      setAttachments([...photos, ...docs]);
+    } catch (err) {
+      console.error('Failed to load attachments:', err);
+    } finally {
+      setIsLoadingAttachments(false);
+    }
+  };
 
   if (!workOrder) return null
 
@@ -224,57 +251,74 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEditing ? 'Edit Work Order' : 'Work Order Details'}
+      title={isEditing ? 'Edit Work Order' : showAttachments ? 'Attachments' : 'Work Order Details'}
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
+      {!showAttachments ? (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
-        {/* Read-only metadata */}
-        {!isEditing && (
-          <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm">
-              <span className="text-gray-500">Work Order ID:</span>
-              <span className="ml-2 font-mono font-semibold text-gray-900">
-                {workOrder.display_id}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="h-4 w-4" />
-              <span>Created: {new Date(workOrder.created_at).toLocaleString()}</span>
-              {workOrder.created_by_user && (
-                <span className="text-gray-500">
-                  by {workOrder.created_by_user.full_name}
+          {/* Read-only metadata */}
+          {!isEditing && (
+            <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+              <div className="text-sm">
+                <span className="text-gray-500">Work Order ID:</span>
+                <span className="ml-2 font-mono font-semibold text-gray-900">
+                  {workOrder.display_id}
                 </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="h-4 w-4" />
-              <span>Updated: {new Date(workOrder.updated_at).toLocaleString()}</span>
-            </div>
-            {workOrder.completed_at && (
+              </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Clock className="h-4 w-4" />
-                <span>Completed: {new Date(workOrder.completed_at).toLocaleString()}</span>
+                <span>Created: {new Date(workOrder.created_at).toLocaleString()}</span>
+                {workOrder.created_by_user && (
+                  <span className="text-gray-500">
+                    by {workOrder.created_by_user.full_name}
+                  </span>
+                )}
               </div>
-            )}
-            {workOrder.assigned_to_user && (
-              <div className="text-sm">
-                <span className="text-gray-500">Assigned to:</span>
-                <span className="ml-2 font-medium text-gray-900">
-                  {workOrder.assigned_to_user.full_name}
-                </span>
-                <span className="ml-1 text-gray-500">
-                  ({workOrder.assigned_to_user.email})
-                </span>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Clock className="h-4 w-4" />
+                <span>Updated: {new Date(workOrder.updated_at).toLocaleString()}</span>
               </div>
-            )}
-          </div>
-        )}
+              {workOrder.completed_at && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Clock className="h-4 w-4" />
+                  <span>Completed: {new Date(workOrder.completed_at).toLocaleString()}</span>
+                </div>
+              )}
+              {workOrder.assigned_to_user && (
+                <div className="text-sm">
+                  <span className="text-gray-500">Assigned to:</span>
+                  <span className="ml-2 font-medium text-gray-900">
+                    {workOrder.assigned_to_user.full_name}
+                  </span>
+                  <span className="ml-1 text-gray-500">
+                    ({workOrder.assigned_to_user.email})
+                  </span>
+                </div>
+              )}
+              
+              {/* Attachments Summary */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Paperclip className="h-4 w-4" />
+                  <span>{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAttachments(true)}
+                >
+                  View/Add Attachments
+                </Button>
+              </div>
+            </div>
+          )}
 
         <Input
           label="Title"
@@ -408,45 +452,44 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
             </Button>
           </div>
         )}
-      </form>
 
-      {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
-      {!isEditing && !showDeleteConfirm && (
-        <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
-          <div>
-            {isAdmin && (
+        {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
+        {!isEditing && !showDeleteConfirm && (
+          <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
+            <div>
+              {isAdmin && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-red-600 hover:text-red-700 hover:border-red-300"
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="text-red-600 hover:text-red-700 hover:border-red-300"
+                onClick={() => onOpenChange(false)}
               >
-                Delete
+                Close
               </Button>
-            )}
+              {canEdit && (
+                <Button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                >
+                  Edit
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
-            {canEdit && (
-              <Button
-                type="button"
-                onClick={() => setIsEditing(true)}
-              >
-                Edit
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Delete Confirmation */}
-      {!isEditing && showDeleteConfirm && (
+        {/* Delete Confirmation */}
+        {!isEditing && showDeleteConfirm && (
         <div className="pt-4 border-t border-gray-200">
           <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
             <h4 className="font-semibold text-red-900 mb-2">Delete Work Order?</h4>
@@ -484,6 +527,85 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
             >
               Delete Work Order
             </Button>
+          </div>
+        </div>
+        )}
+      </form>
+      ) : (
+        /* Attachments View */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium">Attachments ({attachments.length})</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAttachments(false)}
+            >
+              Back to Details
+            </Button>
+          </div>
+
+          {/* Existing Attachments */}
+          {isLoadingAttachments ? (
+            <div className="text-center py-8 text-gray-500">
+              Loading attachments...
+            </div>
+          ) : attachments.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {attachments.map((att) => (
+                <div key={att.id} className="border border-gray-200 rounded-lg p-3 hover:border-brand transition-colors">
+                  <a 
+                    href={att.file_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-3"
+                  >
+                    {att.file_type.startsWith('image/') ? (
+                      <img 
+                        src={att.file_url} 
+                        alt={att.file_name}
+                        className="w-16 h-16 object-cover rounded"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
+                        <Paperclip className="h-6 w-6 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {att.file_name}
+                      </p>
+                      {att.description && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {att.description}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No attachments yet
+            </div>
+          )}
+
+          {/* Upload New Attachment */}
+          <div className="border-t border-gray-200 pt-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-3">Add New Attachment</h4>
+            <FileUploadForm
+              work_order_id={workOrder?.id}
+              uploadType="auto"
+              showDescription={true}
+              showLinkType={true}
+              onSuccess={() => {
+                loadAttachments(); // Reload attachments
+              }}
+              onError={(err) => setError(err)}
+              buttonText="Upload Attachment"
+            />
           </div>
         </div>
       )}

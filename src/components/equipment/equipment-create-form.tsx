@@ -110,33 +110,47 @@ export function EquipmentCreateForm({ open, onOpenChange, onSuccess }: Equipment
 
       const createdEquipment = await equipmentResponse.json()
 
-      // Step 2: Upload document if provided
-      let documentUploadError: string | null = null
+      // Step 2: Upload file if provided (auto-detect photo vs document)
+      let fileUploadError: string | null = null
       if (selectedFile && formData.documentName?.trim() && createdEquipment?.id) {
         try {
-          const docFormData = new FormData()
-          docFormData.append('file', selectedFile)
-          docFormData.append('title', formData.documentName.trim())
-          docFormData.append('type', formData.documentType || 'manual')
-          docFormData.append('scope', 'equipment')
-          docFormData.append('equipment_id', createdEquipment.id)
-          if (formData.documentDescription?.trim()) {
-            docFormData.append('description', formData.documentDescription.trim())
+          // Detect file type
+          const isPhoto = selectedFile.type.startsWith('image/')
+          const endpoint = isPhoto ? '/api/photos' : '/api/documents'
+          
+          const fileFormData = new FormData()
+          fileFormData.append('file', selectedFile)
+          fileFormData.append('equipment_id', createdEquipment.id)
+          
+          if (isPhoto) {
+            // Photo-specific fields
+            if (formData.documentName?.trim()) {
+              fileFormData.append('description', formData.documentName.trim())
+            }
+            fileFormData.append('link_type', 'reference')
+          } else {
+            // Document-specific fields
+            fileFormData.append('title', formData.documentName.trim())
+            fileFormData.append('type', formData.documentType || 'manual')
+            fileFormData.append('scope', 'equipment')
+            if (formData.documentDescription?.trim()) {
+              fileFormData.append('description', formData.documentDescription.trim())
+            }
           }
 
-          const documentResponse = await fetch('/api/documents', {
+          const uploadResponse = await fetch(endpoint, {
             method: 'POST',
-            body: docFormData,
+            body: fileFormData,
           })
 
-          if (!documentResponse.ok) {
-            const errorData = await documentResponse.json().catch(() => ({}))
-            documentUploadError = errorData.error || 'Failed to upload document'
-            console.warn('Document upload warning:', documentUploadError)
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json().catch(() => ({}))
+            fileUploadError = errorData.error || `Failed to upload ${isPhoto ? 'photo' : 'document'}`
+            console.warn('File upload warning:', fileUploadError)
           }
-        } catch (docErr) {
-          documentUploadError = docErr instanceof Error ? docErr.message : 'Failed to upload document'
-          console.warn('Document upload error:', docErr)
+        } catch (uploadErr) {
+          fileUploadError = uploadErr instanceof Error ? uploadErr.message : 'Failed to upload file'
+          console.warn('File upload error:', uploadErr)
         }
       }
 
@@ -155,9 +169,9 @@ export function EquipmentCreateForm({ open, onOpenChange, onSuccess }: Equipment
       setSelectedFile(null)
       setErrors({})
 
-      // Show warning if document upload failed, but keep dialog open briefly
-      if (documentUploadError) {
-        setWarning(`Equipment created successfully! However, the document upload failed: ${documentUploadError}. You can add the document later from the Equipment or Documents tab.`)
+      // Show warning if file upload failed, but keep dialog open briefly
+      if (fileUploadError) {
+        setWarning(`Equipment created successfully! However, the file upload failed: ${fileUploadError}. You can add files later from the Equipment or Documents tab.`)
         // Close after showing warning
         setTimeout(() => {
           setWarning(null)
@@ -284,7 +298,7 @@ export function EquipmentCreateForm({ open, onOpenChange, onSuccess }: Equipment
           {/* File Input */}
           <div>
             <label htmlFor="document-file" className="block text-sm font-medium text-gray-700 mb-2">
-              Document File
+              File (Photo or Document)
             </label>
             <div className="relative">
               <input
@@ -294,19 +308,19 @@ export function EquipmentCreateForm({ open, onOpenChange, onSuccess }: Equipment
                 onChange={handleFileSelect}
                 disabled={isSubmitting}
                 className="sr-only"
-                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                aria-label="Upload document file"
+                accept="image/*,.pdf,.doc,.docx"
+                aria-label="Upload file (photo or document)"
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isSubmitting}
                 className="w-full flex items-center justify-center px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-brand hover:bg-brand/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Click to upload document"
+                title="Click to upload file (photo or document)"
               >
                 <Upload className="h-4 w-4 mr-2 text-gray-600" />
                 <span className="text-sm text-gray-600">
-                  {selectedFile ? selectedFile.name : 'Click to upload document'}
+                  {selectedFile ? selectedFile.name : 'Click to upload file (photo or document)'}
                 </span>
               </button>
             </div>
@@ -383,7 +397,7 @@ export function EquipmentCreateForm({ open, onOpenChange, onSuccess }: Equipment
           )}
 
           <p className="text-xs text-gray-500">
-            💡 Document upload is optional. You can attach it now or add it later from the Equipment or Document tabs.
+            💡 File upload is optional. You can attach photos or documents now, or add them later from the Equipment or Documents tabs.
           </p>
         </div>
 

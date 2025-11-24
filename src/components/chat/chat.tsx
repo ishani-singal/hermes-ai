@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useVoice } from '@/hooks/useVoice'
 import { ChatMessages } from './chat-messages'
 import { ChatInput } from './chat-input'
+import { X, Loader2 } from 'lucide-react'
 
 export type Message = {
   id: string
@@ -18,10 +19,19 @@ type ChatProps = {
   setThreadId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
+type PhotoAttachment = {
+  id: string
+  file: File
+  previewUrl: string
+  status: 'uploading' | 'analyzing' | 'ready' | 'error'
+  uploadId?: string
+}
+
 export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [photos, setPhotos] = useState<PhotoAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const { start, stop, listening, partial, lastFinal, error: voiceError, resetFinal } = useVoice({ lang: 'en-US' })
   const processingRef = useRef(false)
@@ -351,9 +361,99 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     })()
   }
 
+  const handlePhotoSelect = async (file: File) => {
+    const id = Math.random().toString(36).substring(7)
+    const previewUrl = URL.createObjectURL(file)
+    
+    const newPhoto: PhotoAttachment = {
+      id,
+      file,
+      previewUrl,
+      status: 'uploading'
+    }
+    
+    setPhotos(prev => [...prev, newPhoto])
+    
+    // Upload photo
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const res = await fetch('/api/photos/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!res.ok) throw new Error('Upload failed')
+      
+      const data = await res.json()
+      
+      setPhotos(prev => prev.map(p => 
+        p.id === id 
+          ? { ...p, status: 'ready', uploadId: data.data.id }
+          : p
+      ))
+    } catch (err) {
+      console.error('Photo upload error:', err)
+      setPhotos(prev => prev.map(p => 
+        p.id === id 
+          ? { ...p, status: 'error' }
+          : p
+      ))
+    }
+  }
+
+  const removePhoto = (id: string) => {
+    setPhotos(prev => {
+      const photo = prev.find(p => p.id === id)
+      if (photo) {
+        URL.revokeObjectURL(photo.previewUrl)
+      }
+      return prev.filter(p => p.id !== id)
+    })
+  }
+
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto">
       <ChatMessages messages={messages} loading={loading} bottomRef={bottomRef} />
+
+      {/* Photo Previews */}
+      {photos.length > 0 && (
+        <div className="px-4 pt-2 flex gap-2 overflow-x-auto">
+          {photos.map(photo => (
+            <div key={photo.id} className="relative group flex-shrink-0">
+              <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img 
+                  src={photo.previewUrl} 
+                  alt="Preview" 
+                  className={`w-full h-full object-cover ${photo.status === 'uploading' ? 'opacity-50' : ''}`}
+                />
+              </div>
+              
+              {photo.status === 'uploading' && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-brand animate-spin" />
+                </div>
+              )}
+              
+              {photo.status === 'error' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-red-50/80">
+                  <span className="text-xs text-red-600 font-medium">Error</span>
+                </div>
+              )}
+
+              <button
+                onClick={() => removePhoto(photo.id)}
+                title="Remove photo"
+                className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-3 h-3 text-gray-500" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div className="mt-4">
@@ -374,6 +474,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         pushToTalkMode={pushToTalkMode}
         isTTSPlaying={isTTSPlaying}
         onStopTTS={handleStopTTS}
+        onPhotoSelect={handlePhotoSelect}
       />
     </div>
   )
