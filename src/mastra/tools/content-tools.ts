@@ -1,7 +1,7 @@
 /**
- * Document Search Tool for RAG
+ * Content Search Tool for RAG
  * 
- * Enables the AI agent to search for relevant documentation
+ * Enables the AI agent to search for relevant documentation and analyzed photos
  * using semantic search in Pinecone vector database.
  */
 
@@ -10,11 +10,11 @@ import { z } from 'zod';
 import { search, formatContext } from '@/mastra/services/rag-service';
 
 /**
- * Search for relevant documentation
+ * Search for relevant documentation and photos
  */
-export const searchDocumentsTool = createTool({
-  id: 'search-docs-tool',
-  description: `Search for relevant documentation, manuals, and troubleshooting guides. 
+export const searchContentTool = createTool({
+  id: 'search-content-tool',
+  description: `Search for relevant documentation, manuals, troubleshooting guides, and analyzed photos. 
   Use this when the user asks about:
   - How to perform a task
   - Troubleshooting issues or errors
@@ -22,7 +22,10 @@ export const searchDocumentsTool = createTool({
   - Maintenance procedures
   - Safety guidelines
   - Repair instructions
+  - Previously uploaded photos and their descriptions
+  - Visual information about equipment
   
+  The search returns both documents (manuals, SOPs) and photos (with AI-generated descriptions).
   Do NOT use this for simple greetings or confirmations.`,
   
   inputSchema: z.object({

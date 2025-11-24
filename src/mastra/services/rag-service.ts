@@ -28,6 +28,8 @@ export interface IndexDocumentParams {
   documentType: string;
   equipmentId?: string;
   equipmentName?: string;
+  workOrderId?: string;
+  workOrderTitle?: string;
   scope: 'company' | 'equipment';
   fileUrl: string;
 }
@@ -79,6 +81,8 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
     documentType,
     equipmentId,
     equipmentName,
+    workOrderId,
+    workOrderTitle,
     scope,
     fileUrl,
   } = params;
@@ -139,6 +143,12 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
         if (equipmentName) {
           baseRecord.equipment_name = equipmentName;
         }
+        if (workOrderId) {
+          baseRecord.work_order_id = workOrderId;
+        }
+        if (workOrderTitle) {
+          baseRecord.work_order_title = workOrderTitle;
+        }
 
         return baseRecord;
       });
@@ -181,13 +191,44 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
   const supabase = createServiceRoleClient();
 
   try {
-    // Update status to processing
-    await supabase.from('files').update({ processing_status: 'processing' }).eq('id', resourceId);
+    // Update status to processing (if not already set by vision analysis)
+    // For photos, this may already be 'processing' from vision analysis
+    const { data: currentFile } = await supabase
+      .from('files')
+      .select('processing_status, metadata')
+      .eq('id', resourceId)
+      .single();
+    
+    if (currentFile?.processing_status !== 'processing') {
+      await supabase.from('files')
+        .update({ 
+          processing_status: 'processing',
+          metadata: {
+            ...currentFile?.metadata,
+            processing_phase: 'rag_indexing',
+          }
+        })
+        .eq('id', resourceId);
+    } else {
+      // Already processing (e.g., from vision analysis), just update phase
+      await supabase.from('files')
+        .update({ 
+          metadata: {
+            ...currentFile?.metadata,
+            processing_phase: 'rag_indexing',
+          }
+        })
+        .eq('id', resourceId);
+    }
 
     // Step 1: Extract text based on content type
     let text: string;
     
-    if (type === 'document' && fileUrl) {
+    if (content) {
+      // Pre-extracted content (e.g., photo descriptions from vision analysis)
+      text = content;
+      console.log(`[RAG] Using pre-extracted content (${text.length} characters)`);
+    } else if (type === 'document' && fileUrl) {
       text = await parsePDF(fileUrl);
     } else if (type === 'photo' && fileUrl) {
       text = await parseImage(fileUrl);
@@ -231,8 +272,17 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
 
     console.log(`[RAG] ${type} indexing complete: ${resourceId}`);
     
-    // Update status to ready
-    await supabase.from('files').update({ processing_status: 'ready' }).eq('id', resourceId);
+    // Update status to ready and mark processing complete
+    await supabase.from('files')
+      .update({ 
+        processing_status: 'ready',
+        metadata: {
+          ...currentFile?.metadata,
+          processing_phase: 'complete',
+          rag_indexed_at: new Date().toISOString(),
+        }
+      })
+      .eq('id', resourceId);
 
   } catch (error) {
     console.error(`[RAG] Error indexing ${type} ${resourceId}:`, error);

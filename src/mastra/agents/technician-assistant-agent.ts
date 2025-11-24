@@ -14,7 +14,7 @@ import {
   listUsersTool,
   findUserTool,
 } from '../tools/user-tools';
-import { searchDocumentsTool } from '../tools/document-tools';
+import { searchContentTool } from '../tools/content-tools';
 import { analyzePhotoTool } from '../tools/photo-tools';
 import { postgres } from '../storage'
 import { vector } from '../storage';
@@ -53,7 +53,7 @@ Users:
 - find-user-tool: Find user by name or email for assignments
 
 Documentation (RAG):
-- search-docs-tool: Search for relevant manuals, procedures, troubleshooting guides
+- search-content-tool: Search for relevant manuals, procedures, troubleshooting guides, and analyzed photos
   Use when users ask: "how to", "troubleshoot", "error", "guide", "procedure", "specifications" etc.
   Do NOT use for simple greetings or confirmations.
 
@@ -68,7 +68,7 @@ Photos & Images:
 - When discussing a specific piece of equipment, retrieve related work orders and relevant documentation if available.
 
 **IMPORTANT - Working Memory Usage:**
-  * When you search documents using search-docs-tool, save the key findings in working memory under "Documents & Manuals Referenced"
+  * When you search content using search-content-tool, save the key findings in working memory under "Documents & Manuals Referenced"
   * When discussing specific equipment, save the equipment name/ID and discussion context in working memory
   * When work orders are mentioned or retrieved, note their display ID and key details in working memory
   * When you detect a maintenance task, issue, or repair need during conversation, add it to "Pending Tasks & Recommendations"
@@ -83,7 +83,7 @@ Photos & Images:
 - Once you have the ID, use it directly. Don't ask the user to confirm it.
 - ALWAYS Use display IDs (WO-XXX, EQ-XXX) when showing information to users, never internal UUIDs
 - You cannot delete work orders - direct users to the Work Orders tab for deletion
-- For any non-trivial equipment troubleshooting or procedure questions, call search-docs-tool first to gather context before describing procedures or safe operating limits.
+- For any non-trivial equipment troubleshooting or procedure questions, call search-content-tool first to gather context before describing procedures or safe operating limits.
 - Include citations from documentation when providing answers (e.g., "According to [Manual X, Page Y]...") and follow documentation instructions precisely in your responses.
 - **Work Order Suggestions:** If during conversation you detect a maintenance task, equipment issue, or repair need (e.g., "the pump is making noise", "need to replace the filter"), proactively ask: "Would you like me to create a work order for this?" Use the conversation summary from working memory to pre-fill the work order description with relevant context.`;
 
@@ -102,7 +102,7 @@ export const technicianAgent = new Agent({
     getEQ: getEquipmentTool,
     listUsers: listUsersTool,
     findUser: findUserTool,
-    searchDocs: searchDocumentsTool,
+    searchContent: searchContentTool,
     analyzePhoto: analyzePhotoTool,
   },
   memory: new Memory({

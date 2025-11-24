@@ -11,14 +11,14 @@ Scope: Photos in chat and work orders; video deferred but considered (photo + au
 
 ## Quick Status Update (Nov 23, 2025)
 
-### ✅ What's Been Implemented:
+### ✅ Phase 1 & 2 Complete (Nov 22-23, 2025):
 1. **Two Endpoint Decision**: Separate `/api/photos` and `/api/documents` (see architecture doc for rationale)
-2. **Photos API**: Full GET/POST with equipment & work order linking
+2. **Photos API**: Full GET/POST/PATCH with equipment & work order linking
 3. **FileUploadForm Component**: Unified, auto-detecting upload component
 4. **Work Order Integration**: 
    - Create flow: WO creation → optional file upload
    - Detail view: View/add attachments section
-5. **Database Schema**: Unified `files` table with link tables (already existed)
+5. **Database Schema**: Unified `files` table with link tables
 6. **Agent-First Vision Analysis**: Cost-optimized architecture
    - **Photo upload**: Fast save-only (no AI wait)
    - **Agent tool**: `analyzePhotoTool` performs Gemini Vision analysis on-demand
@@ -29,15 +29,37 @@ Scope: Photos in chat and work orders; video deferred but considered (photo + au
    - **Technical observations**: Damage indicators, measurements, safety concerns
    - Parser in `src/lib/parsers/` for shared use
    - Results saved to `files.description` and `files.metadata.scene_analysis`
-   - Status flow: `'uploaded'` → `'analyzing'` → `'ready'`
+   - Status flow: `'uploaded'` → `'ready'` (vision complete)
    - Uses `GOOGLE_GENERATIVE_AI_API_KEY` (Generative Language API)
+7. **RAG Indexing for Photos**: Photos are now searchable via semantic search
+   - **Agent tool queues RAG**: After vision analysis, photo queued for Pinecone indexing immediately
+   - **Unified search**: `searchContentTool` searches both documents and photos
+   - **Work order metadata**: Both documents and photos include work_order_id in Pinecone
+   - **Re-indexing**: Editing description or links triggers re-index (cancels pending job, queues new)
+   - **Status tracking**: `metadata.processing_phase` tracks internal states
 
-### 🔧 Still TODO (Phase 3+):
-- Background vectorization worker (similar to documents)
+### 🔧 Phase 3+ (Future Enhancements):
+
+**Background Indexing Service** (High Priority):
+- Currently: RAG indexing triggered by agent tool after vision analysis
+- Future: Unified background service for all content indexing
+- **Design**:
+  - **Documents**: Upload → `status='uploaded'` → Background service polls → `status='processing'` (RAG) → `status='ready'`
+  - **Photos**: Upload → `status='uploaded'` → Vision analysis (agent/background) → `status='ready'` → Background service polls → RAG indexing (stays `'ready'`)
+  - Background service checks `metadata.processing_phase`:
+    - For photos: If `'uploaded'` and no `vision_analyzed_at`, run vision analysis first
+    - For photos: If `'vision_complete'` and not RAG indexed, run RAG
+    - For documents: If `'uploaded'`, run PDF parsing + RAG
+  - Polling logic: Every 1-5 minutes, find files needing indexing
+  - Benefits: Separation of concerns, better retry logic, monitoring, and debugging
+- **Frontend state mapping**: Can show simplified states to users (Uploaded → Processing → Ready)
+
+**Other Planned Features**:
 - Fallback analysis for agent timeouts (background worker can retry after 5min)
 - Equipment form refactor to use new component
 - Mobile camera integration
 - Structured metadata extraction (serial validation, damage scoring)
+- Image similarity search (image embeddings)
 
 ---
 

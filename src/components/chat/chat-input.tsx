@@ -102,7 +102,7 @@ export function ChatInput({
   }
 
   return (
-    <div className="mt-4">
+    <div className="px-4 py-3 sm:mt-4">
       <div className="flex gap-2 items-stretch">
         {/* Attachment button */}
         <div className="relative flex items-stretch">

@@ -22,7 +22,7 @@ export function ChatMessages({ messages, loading, bottomRef }: ChatMessagesProps
       </div>
 
       {/* Chat Messages Area */}
-      <div className="flex-1 overflow-auto p-3 sm:p-4 bg-white rounded-lg border border-gray-200 shadow-sm min-h-[400px] sm:min-h-[320px]">
+      <div className="h-full overflow-auto p-3 sm:p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
         <div className="space-y-4">
           {messages.map((m) => (
             <div key={m.id} className={m.role === 'user' ? 'text-right' : m.role === 'system' ? 'text-center' : 'text-left'}>

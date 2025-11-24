@@ -199,6 +199,7 @@ export const POST = route()
     const type = formData.get('type') as DocumentType;
     const scope = formData.get('scope') as DocumentScope;
     const equipment_id = formData.get('equipment_id') as string | null;
+    const work_order_id = formData.get('work_order_id') as string | null;
     const uploadedFile = formData.get('file') as File | null;
 
     // Validate required fields
@@ -251,6 +252,26 @@ export const POST = route()
 
       validatedEquipmentId = equipment.id;
       equipmentName = equipment.name;
+    }
+
+    // Validate work order exists and belongs to company
+    let validatedWorkOrderId: string | null = null;
+    let workOrderTitle: string | undefined;
+
+    if (work_order_id) {
+      const { data: workOrder, error: workOrderError } = await supabase
+        .from('work_orders')
+        .select('id, title')
+        .eq('company_id', user!.companyId)
+        .or(`id.eq.${work_order_id},display_id.eq.${work_order_id}`)
+        .maybeSingle();
+
+      if (workOrderError || !workOrder) {
+        return badRequest('Work order not found or does not belong to your company');
+      }
+
+      validatedWorkOrderId = workOrder.id;
+      workOrderTitle = workOrder.title;
     }
 
     if (!uploadedFile) {
@@ -348,6 +369,22 @@ export const POST = route()
       }
     }
 
+    // Link to work order if needed
+    if (validatedWorkOrderId) {
+      const { error: linkError } = await supabase
+        .from('work_order_files')
+        .insert({
+          work_order_id: validatedWorkOrderId,
+          file_id: fileRecord.id,
+          link_type: 'reference', // Default link type for documents
+        });
+
+      if (linkError) {
+        console.error('Error linking document to work order:', linkError);
+        // We don't fail the whole request, but log it
+      }
+    }
+
     // Enqueue background processing job for PDF parsing and RAG ingestion
     try {
       const processingParams: IndexDocumentParams = {
@@ -357,6 +394,8 @@ export const POST = route()
         documentType: type,
         equipmentId: validatedEquipmentId || undefined,
         equipmentName,
+        workOrderId: validatedWorkOrderId || undefined,
+        workOrderTitle,
         scope: scope,
         fileUrl: fileRecord.file_url,
       };

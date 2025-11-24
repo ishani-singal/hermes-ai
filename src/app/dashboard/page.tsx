@@ -74,7 +74,7 @@ export default function DashboardPage() {
   const handleDocumentUploadSuccess = () => setDocumentRefreshTrigger((p) => p + 1)
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-4rem)]">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)]">
       {/* Side Navigation */}
       <SideNav
         items={navItems}
@@ -82,8 +82,8 @@ export default function DashboardPage() {
         onItemChange={(itemId) => setActiveNav(itemId as typeof activeNav)}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+      {/* Main Content Area - Account for bottom nav on mobile */}
+      <main className="flex-1 overflow-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 md:pb-8">
         {/* Welcome Section - Show only on chat tab when no messages */}
         {activeNav === 'chat' && chatMessages.length === 0 && (
           <div className="max-w-3xl mx-auto mb-8">

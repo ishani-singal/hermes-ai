@@ -18,6 +18,7 @@ interface Job<T = unknown> {
   error?: string;
   createdAt: Date;
   processedAt?: Date;
+  visibleAt?: Date; // Job won't be processed until this time
 }
 
 interface QueueOptions {
@@ -44,8 +45,9 @@ export class SimpleQueue<T = unknown> {
 
   /**
    * Add job to queue
+   * @param delayMs - Optional delay in milliseconds before job becomes visible for processing
    */
-  async add(data: T, jobId?: string): Promise<string> {
+  async add(data: T, jobId?: string, delayMs?: number): Promise<string> {
     const id = jobId ?? `job-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     const job: Job<T> = {
@@ -54,6 +56,7 @@ export class SimpleQueue<T = unknown> {
       attempts: 0,
       maxAttempts: this.options.maxAttempts,
       createdAt: new Date(),
+      visibleAt: delayMs ? new Date(Date.now() + delayMs) : undefined,
     };
 
     this.queue.push(job);
@@ -100,8 +103,14 @@ export class SimpleQueue<T = unknown> {
       return;
     }
 
-    // Find next available job
-    const job = this.queue.find(j => !this.processing.has(j.id) && j.attempts < j.maxAttempts);
+    const now = new Date();
+    
+    // Find next available job (must be visible and not already processing)
+    const job = this.queue.find(j => 
+      !this.processing.has(j.id) && 
+      j.attempts < j.maxAttempts &&
+      (!j.visibleAt || j.visibleAt <= now)
+    );
 
     if (!job) {
       // No jobs available, check again in 1 second
@@ -182,10 +191,20 @@ export class SimpleQueue<T = unknown> {
 }
 
 // Export singleton instance for document processing
-import { indexDocument, IndexDocumentParams } from '@/mastra/services/rag-service';
+import { indexDocument, IndexDocumentParams, indexContent, IndexContentParams } from '@/mastra/services/rag-service';
 
 export const documentQueue = new SimpleQueue<IndexDocumentParams>(
   indexDocument,
+  {
+    maxAttempts: 3,
+    concurrency: 2,
+    retryDelay: 2000,
+  }
+);
+
+// Export singleton instance for generic content processing (photos, videos, etc.)
+export const contentQueue = new SimpleQueue<IndexContentParams>(
+  indexContent,
   {
     maxAttempts: 3,
     concurrency: 2,

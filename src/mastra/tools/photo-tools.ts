@@ -9,6 +9,8 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { parseImage } from '@/lib/parsers/image-parser';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { contentQueue } from '@/lib/queue/simple-queue';
+import type { IndexContentParams } from '@/mastra/services/rag-service';
 
 /**
  * Analyze a photo with Gemini Vision
@@ -75,7 +77,15 @@ export const analyzePhotoTool = createTool({
       // Note: display_id is stored in metadata JSONB field
       let query = supabase
         .from('files')
-        .select('id, file_url, description, processing_status, bucket_id, metadata')
+        .select(`
+          id, file_url, description, processing_status, bucket_id, metadata,
+          equipment_files:equipment_files (
+            equipment:equipment (id, name)
+          ),
+          work_order_files:work_order_files (
+            work_order:work_orders (id, title)
+          )
+        `)
         .eq('company_id', companyId)
         .eq('bucket_id', 'photos');
       
@@ -111,10 +121,16 @@ export const analyzePhotoTool = createTool({
         };
       }
       
-      // Update status to 'analyzing'
+      // Update status to 'processing' (vision analysis phase)
       await supabase
         .from('files')
-        .update({ processing_status: 'analyzing' })
+        .update({ 
+          processing_status: 'processing',
+          metadata: {
+            ...photo.metadata,
+            processing_phase: 'vision_analysis',
+          }
+        })
         .eq('id', photo.id);
       
       console.log('[AnalyzePhotoTool] Calling Gemini Vision for:', photo.file_url);
@@ -142,11 +158,12 @@ export const analyzePhotoTool = createTool({
         .from('files')
         .update({
           description: description,
-          processing_status: 'ready',
+          processing_status: 'processing', // Keep as processing, RAG will complete it
           metadata: {
             ...photo.metadata,
+            processing_phase: 'vision_complete',
             scene_analysis: description,
-            analyzed_at: new Date().toISOString(),
+            vision_analyzed_at: new Date().toISOString(),
           },
         })
         .eq('id', photo.id);
@@ -159,6 +176,41 @@ export const analyzePhotoTool = createTool({
           displayId: photo.metadata?.display_id || undefined,
           error: 'Failed to save analysis results',
         };
+      }
+      
+      // Queue photo for RAG indexing
+      // NOTE: Future enhancement - move this to a background service that:
+      // 1. Polls for files with status='uploaded' (for documents) or 'processing' with vision_complete (for photos)
+      // 2. Sets status to 'processing' before starting RAG
+      // 3. Sets status to 'ready' after RAG completes
+      // 4. Uses metadata.processing_phase to track: vision_analysis → vision_complete → rag_indexing → complete
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const photoData = photo as any;
+        const equipment = photoData.equipment_files?.[0]?.equipment;
+        const workOrder = photoData.work_order_files?.[0]?.work_order;
+        
+        const indexParams: IndexContentParams = {
+          type: 'photo',
+          resourceId: photo.id,
+          companyId: companyId,
+          content: description, // Use pre-extracted description, skip parsing
+          metadata: {
+            photo_description: description,
+            equipment_id: equipment?.id,
+            equipment_name: equipment?.name,
+            work_order_id: workOrder?.id,
+            work_order_title: workOrder?.title,
+          },
+        };
+        
+        // Queue immediately for RAG indexing
+        await contentQueue.add(indexParams, `photo-${photo.id}`);
+        
+        console.log('[AnalyzePhotoTool] Photo queued for RAG indexing');
+      } catch (queueError) {
+        console.error('[AnalyzePhotoTool] Failed to queue photo for RAG indexing:', queueError);
+        // Don't fail the analysis - photo is still analyzed and accessible
       }
       
       console.log('[AnalyzePhotoTool] Analysis completed successfully');

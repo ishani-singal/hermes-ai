@@ -501,53 +501,57 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto">
-      <ChatMessages messages={messages} loading={loading} bottomRef={bottomRef} />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ChatMessages messages={messages} loading={loading} bottomRef={bottomRef} />
+      </div>
 
-      {/* Photo Previews */}
-      {photos.length > 0 && (
-        <div className="px-4 pt-2 flex gap-2 overflow-x-auto">
-          {photos.map(photo => (
-            <div key={photo.id} className="relative group flex-shrink-0">
-              <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img 
-                  src={photo.previewUrl} 
-                  alt="Preview" 
-                  className={`w-full h-full object-cover ${photo.status === 'uploading' ? 'opacity-50' : ''}`}
-                />
+      {/* Input area with sticky positioning for mobile */}
+      <div className="flex-shrink-0 bg-white">
+        {/* Photo Previews */}
+        {photos.length > 0 && (
+          <div className="px-4 pt-2 flex gap-2 overflow-x-auto">
+            {photos.map(photo => (
+              <div key={photo.id} className="relative group flex-shrink-0">
+                <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img 
+                    src={photo.previewUrl} 
+                    alt="Preview" 
+                    className={`w-full h-full object-cover ${photo.status === 'uploading' ? 'opacity-50' : ''}`}
+                  />
+                </div>
+                
+                {photo.status === 'uploading' && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-brand animate-spin" />
+                  </div>
+                )}
+                
+                {photo.status === 'error' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-red-50/80">
+                    <span className="text-xs text-red-600 font-medium">Error</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => removePhoto(photo.id)}
+                  title="Remove photo"
+                  className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-3 h-3 text-gray-500" />
+                </button>
               </div>
-              
-              {photo.status === 'uploading' && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 text-brand animate-spin" />
-                </div>
-              )}
-              
-              {photo.status === 'error' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-red-50/80">
-                  <span className="text-xs text-red-600 font-medium">Error</span>
-                </div>
-              )}
+            ))}
+          </div>
+        )}
 
-              <button
-                onClick={() => removePhoto(photo.id)}
-                title="Remove photo"
-                className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 hover:bg-gray-100 transition-colors"
-              >
-                <X className="w-3 h-3 text-gray-500" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+        {error && (
+          <div className="px-4 mt-2">
+            <div className="text-sm text-red-600 mb-2">{error}</div>
+          </div>
+        )}
 
-      {error && (
-        <div className="mt-4">
-          <div className="text-sm text-red-600 mb-2">{error}</div>
-        </div>
-      )}
-
-      <ChatInput
+        <ChatInput
         input={input}
         setInput={setInput}
         onSend={() => void send()}
@@ -562,6 +566,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         onStopTTS={handleStopTTS}
         onPhotoSelect={handlePhotoSelect}
       />
+      </div>
     </div>
   )
 }
