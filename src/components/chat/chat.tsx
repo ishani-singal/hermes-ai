@@ -10,6 +10,12 @@ export type Message = {
   id: string
   role: 'user' | 'assistant' | 'system'
   text: string
+  photoAttachment?: {
+    id: string
+    uploadId: string
+    displayId?: string
+    previewUrl: string
+  }
 }
 
 type ChatProps = {
@@ -387,12 +393,92 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       if (!res.ok) throw new Error('Upload failed')
       
       const data = await res.json()
+      const photoId = data.data.id
+      const displayId = data.data.metadata?.display_id
       
-      setPhotos(prev => prev.map(p => 
-        p.id === id 
-          ? { ...p, status: 'ready', uploadId: data.data.id }
-          : p
-      ))
+      // Move photo to chat immediately with "analyzing" status
+      const photoAttachment = {
+        id,
+        uploadId: photoId,
+        displayId,
+        previewUrl,
+      }
+      
+      const analyzingMessage: Message = {
+        id: 'analyzing-' + String(Date.now()) + Math.random().toString(16).slice(2),
+        role: 'assistant',
+        text: '',
+        photoAttachment,
+      }
+      
+      setMessages((m) => [...m, analyzingMessage])
+      
+      // Remove photo from attachment area - it's now in the chat
+      setPhotos(prev => prev.filter(p => p.id !== id))
+      
+      // Auto-send message to agent with photo reference (silently)
+      const photoRef = displayId || photoId
+      const message = `I uploaded a photo (${photoRef}). Can you analyze it and tell me what you see?`
+      
+      // Call agent to analyze
+      setLoading(true)
+      
+      try {
+        const aiRes = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ 
+            message,
+            threadId: threadId || undefined,
+            streamMode: false,
+          }),
+        })
+        
+        if (!aiRes.ok) {
+          throw new Error('AI analysis failed')
+        }
+        
+        const json = await aiRes.json()
+        
+        const responseThreadId = json?.data?.threadId || json?.threadId
+        if (responseThreadId && responseThreadId !== threadId) {
+          setThreadId(responseThreadId)
+        }
+        
+        const assistantText =
+          json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
+        
+        // Replace the "analyzing" message with the actual analysis
+        setMessages((m) => m.map(msg => 
+          msg.id === analyzingMessage.id
+            ? {
+                ...msg,
+                text: String(assistantText),
+              }
+            : msg
+        ))
+        
+      } catch (aiErr) {
+        console.error('AI analysis error:', aiErr)
+        setMessages((m) => [
+          ...m,
+          {
+            id: 'a-err-' + String(Date.now()),
+            role: 'assistant',
+            text: 'Sorry — I had trouble analyzing the photo. ' + (aiErr instanceof Error ? aiErr.message : ''),
+          },
+        ])
+        
+        setPhotos(prev => prev.map(p => 
+          p.id === id 
+            ? { ...p, status: 'error' }
+            : p
+        ))
+      } finally {
+        setLoading(false)
+      }
+      
     } catch (err) {
       console.error('Photo upload error:', err)
       setPhotos(prev => prev.map(p => 

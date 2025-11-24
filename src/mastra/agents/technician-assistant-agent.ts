@@ -15,6 +15,7 @@ import {
   findUserTool,
 } from '../tools/user-tools';
 import { searchDocumentsTool } from '../tools/document-tools';
+import { analyzePhotoTool } from '../tools/photo-tools';
 import { postgres } from '../storage'
 import { vector } from '../storage';
 import { embedder } from '../embedding';
@@ -55,6 +56,11 @@ Documentation (RAG):
 - search-docs-tool: Search for relevant manuals, procedures, troubleshooting guides
   Use when users ask: "how to", "troubleshoot", "error", "guide", "procedure", "specifications" etc.
   Do NOT use for simple greetings or confirmations.
+
+Photos & Images:
+- analyze-photo-tool: Analyze equipment photos to extract descriptions, text, and assess condition
+  Use when users upload photos or ask: "what's in this photo?", "analyze this image"
+  The tool extracts serial numbers, identifies damage, reads gauges, and provides technical descriptions
 
 **Responsibilities:**
 - Title and description are required when creating work orders - ask if not provided. If you have enough context, suggest a title/description.
@@ -97,6 +103,7 @@ export const technicianAgent = new Agent({
     listUsers: listUsersTool,
     findUser: findUserTool,
     searchDocs: searchDocumentsTool,
+    analyzePhoto: analyzePhotoTool,
   },
   memory: new Memory({
     // Storage configuration - use shared storage instance

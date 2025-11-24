@@ -9,7 +9,7 @@ Scope: Photos in chat and work orders; video deferred but considered (photo + au
 
 ---
 
-## Quick Status Update (Nov 22, 2025)
+## Quick Status Update (Nov 23, 2025)
 
 ### ✅ What's Been Implemented:
 1. **Two Endpoint Decision**: Separate `/api/photos` and `/api/documents` (see architecture doc for rationale)
@@ -19,13 +19,25 @@ Scope: Photos in chat and work orders; video deferred but considered (photo + au
    - Create flow: WO creation → optional file upload
    - Detail view: View/add attachments section
 5. **Database Schema**: Unified `files` table with link tables (already existed)
+6. **Agent-First Vision Analysis**: Cost-optimized architecture
+   - **Photo upload**: Fast save-only (no AI wait)
+   - **Agent tool**: `analyzePhotoTool` performs Gemini Vision analysis on-demand
+   - **Smart caching**: Checks if already analyzed to avoid duplicate vision API calls
+   - **Automatic analysis**: Chat auto-sends message to agent after upload
+   - **Scene understanding**: Natural language description of equipment, condition, damage
+   - **OCR**: Text extraction (labels, serial numbers, gauges)
+   - **Technical observations**: Damage indicators, measurements, safety concerns
+   - Parser in `src/lib/parsers/` for shared use
+   - Results saved to `files.description` and `files.metadata.scene_analysis`
+   - Status flow: `'uploaded'` → `'analyzing'` → `'ready'`
+   - Uses `GOOGLE_GENERATIVE_AI_API_KEY` (Generative Language API)
 
 ### 🔧 Still TODO (Phase 3+):
-- OCR & Vision AI processing pipeline
-- Photo description generation
-- RAG indexing for photos
+- Background vectorization worker (similar to documents)
+- Fallback analysis for agent timeouts (background worker can retry after 5min)
 - Equipment form refactor to use new component
 - Mobile camera integration
+- Structured metadata extraction (serial validation, damage scoring)
 
 ---
 
@@ -65,7 +77,7 @@ Scope: Photos in chat and work orders; video deferred but considered (photo + au
 ## Success Criteria (MVP)
 
 - Upload → Storage → Background analysis pipeline runs automatically.
-- OCR-only works reliably (baseline); optional scene analysis can be enabled per company.
+- OCR-only works reliably (baseline).
 - Descriptions and structured metadata saved per photo; editable in UI; re-index on change.
 - Equipment linking available (manual + auto-suggest via OCR and similarity).
 - Photos searchable via natural language (semantic text search).

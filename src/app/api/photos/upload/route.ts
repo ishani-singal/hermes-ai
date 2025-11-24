@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       .getPublicUrl(filePath)
 
     // Insert into files table
+    // Note: No AI analysis here - agent will analyze via tool
     const { data: photoFile, error: dbError } = await supabase
       .from('files')
       .insert({
@@ -55,7 +56,8 @@ export async function POST(req: NextRequest) {
         file_name: file.name,
         file_type: file.type,
         file_size: file.size,
-        processing_status: 'uploaded'
+        processing_status: 'uploaded', // Agent will analyze and update to 'ready'
+        metadata: {}
       })
       .select()
       .single()

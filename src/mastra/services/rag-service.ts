@@ -10,9 +10,9 @@
 
 import { MDocument } from '@mastra/rag';
 import { namespace } from '@/lib/pinecone/client';
-import { parsePDF } from './parsers/pdf-parser';
-import { parseImage } from './parsers/image-parser';
-import { parseVideo } from './parsers/video-parser';
+import { parsePDF } from '@/lib/parsers/pdf-parser';
+import { parseImage } from '@/lib/parsers/image-parser';
+import { parseVideo } from '@/lib/parsers/video-parser';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // ============================================

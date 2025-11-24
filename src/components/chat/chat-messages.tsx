@@ -32,6 +32,20 @@ export function ChatMessages({ messages, loading, bottomRef }: ChatMessagesProps
                   (m.role === 'user' ? 'bg-brand text-white' : m.role === 'system' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-900')
                 }
               >
+                {/* Photo Attachment */}
+                {m.photoAttachment && (
+                  <div className="mb-2">
+                    <img 
+                      src={m.photoAttachment.previewUrl} 
+                      alt={m.photoAttachment.displayId || 'Photo'} 
+                      className="rounded-lg max-w-xs max-h-48 object-contain"
+                    />
+                    {m.photoAttachment.displayId && (
+                      <p className="text-xs text-gray-500 mt-1">{m.photoAttachment.displayId}</p>
+                    )}
+                  </div>
+                )}
+                
                 {m.role === 'assistant' ? (
                   <div className="prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-1">
                     <ReactMarkdown
