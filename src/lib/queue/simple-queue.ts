@@ -46,9 +46,21 @@ export class SimpleQueue<T = unknown> {
   /**
    * Add job to queue
    * @param delayMs - Optional delay in milliseconds before job becomes visible for processing
+   * 
+   * Note: If a job with the same ID already exists and is not yet processing,
+   * it will be replaced with the new job (deduplication).
    */
   async add(data: T, jobId?: string, delayMs?: number): Promise<string> {
     const id = jobId ?? `job-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Check if job with same ID already exists and is not processing
+    const existingJobIndex = this.queue.findIndex(j => j.id === id && !this.processing.has(j.id));
+    if (existingJobIndex !== -1) {
+      // Remove existing pending job (will be replaced with new one)
+      const existingJob = this.queue[existingJobIndex];
+      this.queue.splice(existingJobIndex, 1);
+      console.log(`[Queue] Replacing existing pending job: ${id} (was scheduled for ${existingJob.visibleAt?.toISOString() || 'immediate'})`);
+    }
     
     const job: Job<T> = {
       id,
@@ -60,7 +72,7 @@ export class SimpleQueue<T = unknown> {
     };
 
     this.queue.push(job);
-    console.log(`[Queue] Job added: ${id} (queue size: ${this.queue.length})`);
+    console.log(`[Queue] Job added: ${id} (queue size: ${this.queue.length}, visible at: ${job.visibleAt?.toISOString() || 'immediate'})`);
 
     // Start processing if not already running
     if (!this.isRunning) {
@@ -190,19 +202,9 @@ export class SimpleQueue<T = unknown> {
   }
 }
 
-// Export singleton instance for document processing
-import { indexDocument, IndexDocumentParams, indexContent, IndexContentParams } from '@/mastra/services/rag-service';
+// Export singleton instance for unified content processing (documents, photos, videos, etc.)
+import { indexContent, IndexContentParams } from '@/mastra/services/rag-service';
 
-export const documentQueue = new SimpleQueue<IndexDocumentParams>(
-  indexDocument,
-  {
-    maxAttempts: 3,
-    concurrency: 2,
-    retryDelay: 2000,
-  }
-);
-
-// Export singleton instance for generic content processing (photos, videos, etc.)
 export const contentQueue = new SimpleQueue<IndexContentParams>(
   indexContent,
   {

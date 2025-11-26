@@ -1,8 +1,10 @@
 /**
  * PATCH /api/photos/[id] - Update a photo
+ * DELETE /api/photos/[id] - Delete a photo
  * 
  * Authorization: 
  * - Update: Authenticated users (admin, editor can update)
+ * - Delete: Admin only
  * 
  * Supports updating:
  * - description (manual edits)
@@ -17,6 +19,7 @@ import { success, badRequest, forbidden, notFound } from '@/lib/auth/middleware'
 import * as helpers from '@/lib/auth/helpers';
 import { contentQueue } from '@/lib/queue/simple-queue';
 import type { IndexContentParams } from '@/mastra/services/rag-service';
+import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
 
 export const PATCH = route()
   .auth()
@@ -220,12 +223,31 @@ export const PATCH = route()
             },
           };
 
-          // Queue for re-indexing with updated metadata
-          // Note: If original job is still queued, both will execute and upsert the same Pinecone record
+          // Check if photo is already indexed (status='ready') or still in delay period
+          const isAlreadyIndexed = photo.processing_status === 'ready';
           const jobId = `photo-${photo.id}`;
-          await contentQueue.add(indexParams, jobId);
           
-          console.log('[PhotoUpdate] Photo queued for re-indexing');
+          if (isAlreadyIndexed) {
+            // File already indexed - queue immediate re-index with updated metadata
+            await contentQueue.add(indexParams, jobId); // No delay
+            console.log('[PhotoUpdate] Photo queued for immediate re-indexing (already indexed)');
+          } else {
+            // File not yet indexed - queue will dedupe with existing delayed job
+            // This replaces the pending job with fresh metadata and resets the delay
+            await contentQueue.add(indexParams, jobId, RAG_INDEX_DELAY_MS);
+            console.log('[PhotoUpdate] Photo re-queued with updated metadata (delay reset)');
+          }
+          
+          // Update metadata to track last update
+          await supabase
+            .from('files')
+            .update({
+              metadata: {
+                ...photo.metadata,
+                last_metadata_update: new Date().toISOString(),
+              },
+            })
+            .eq('id', photo.id);
         }
       } catch (queueError) {
         console.error('[PhotoUpdate] Failed to queue photo for re-indexing:', queueError);
@@ -237,4 +259,79 @@ export const PATCH = route()
       message: 'Photo updated successfully',
       needsReindex,
     });
+  });
+
+// =============================================
+// DELETE - Delete Photo
+// =============================================
+
+export const DELETE = route()
+  .auth()
+  .handle(async (_request: NextRequest, context: RouteContext) => {
+    const { user, params } = context;
+    const photoId = params?.id as string;
+
+    if (!photoId) {
+      return badRequest('Photo ID is required');
+    }
+
+    // Check if user can delete photos (admin only)
+    if (!helpers.canPerformAction(user!, 'delete', 'documents')) {
+      return forbidden('You do not have permission to delete photos');
+    }
+
+    const supabase = createServiceRoleClient();
+
+    // Fetch existing photo to get storage path
+    const { data: photo, error: fetchError } = await supabase
+      .from('files')
+      .select('id, storage_path, company_id')
+      .eq('company_id', user!.companyId)
+      .eq('bucket_id', 'photos')
+      .or(`id.eq.${photoId},metadata->>display_id.eq.${photoId}`)
+      .maybeSingle();
+
+    if (fetchError || !photo) {
+      return notFound('Photo not found or does not belong to your company');
+    }
+
+    // Delete file from storage
+    if (photo.storage_path) {
+      const { error: storageError } = await supabase.storage
+        .from('photos')
+        .remove([photo.storage_path]);
+
+      if (storageError) {
+        console.error('Error deleting photo from storage:', storageError);
+        // Continue with database deletion even if storage deletion fails
+      }
+    }
+
+    // Delete equipment_files links (cascade should handle this, but be explicit)
+    await supabase
+      .from('equipment_files')
+      .delete()
+      .eq('file_id', photo.id);
+
+    // Delete work_order_files links
+    await supabase
+      .from('work_order_files')
+      .delete()
+      .eq('file_id', photo.id);
+
+    // Delete the file record
+    const { error: deleteError } = await supabase
+      .from('files')
+      .delete()
+      .eq('id', photo.id);
+
+    if (deleteError) {
+      console.error('Error deleting photo record:', deleteError);
+      return badRequest('Failed to delete photo');
+    }
+
+    // TODO: Also delete from Pinecone if indexed
+    // This would require knowing the chunk IDs or doing a filter delete
+
+    return success({ message: 'Photo deleted successfully' });
   });

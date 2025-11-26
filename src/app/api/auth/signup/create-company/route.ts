@@ -30,11 +30,12 @@ export async function POST(request: NextRequest) {
     // Use admin client to bypass RLS for signup operations
     const supabase = createServiceRoleClient()
 
-    // Check if company name already exists
+    // Check if company name already exists (trim whitespace)
+    const trimmedCompanyName = companyName.trim()
     const { data: existingCompany } = await supabase
       .from('companies')
       .select('id')
-      .ilike('name', companyName)
+      .ilike('name', trimmedCompanyName)
       .single()
 
     if (existingCompany) {
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Generate company_code from company name
     const { data: companyCodeData, error: companyCodeError } = await supabase
-      .rpc('generate_company_code', { p_company_name: companyName })
+      .rpc('generate_company_code', { p_company_name: trimmedCompanyName })
 
     if (companyCodeError) {
       console.error('Company code generation error:', companyCodeError)
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
-        name: companyName,
+        name: trimmedCompanyName,
         company_code: companyCode,
         primary_contact_email: email,
       })

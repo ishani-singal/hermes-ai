@@ -43,8 +43,7 @@ export async function POST(req: NextRequest) {
       .from('photos')
       .getPublicUrl(filePath)
 
-    // Insert into files table
-    // Note: No AI analysis here - agent will analyze via tool
+    // Insert into files table with initial status
     const { data: photoFile, error: dbError } = await supabase
       .from('files')
       .insert({
@@ -56,7 +55,7 @@ export async function POST(req: NextRequest) {
         file_name: file.name,
         file_type: file.type,
         file_size: file.size,
-        processing_status: 'uploaded', // Agent will analyze and update to 'ready'
+        processing_status: 'uploaded',
         metadata: {}
       })
       .select()
@@ -88,6 +87,63 @@ export async function POST(req: NextRequest) {
           file_id: photoFile.id,
           link_type: 'reference' // Default, can be updated later
         })
+    }
+
+    // Always analyze photos immediately (unified flow)
+    // Backend handles RAG queuing - agent tool only fetches existing analysis
+    try {
+      const { parseImage } = await import('@/lib/parsers/image-parser');
+      const { contentQueue } = await import('@/lib/queue/simple-queue');
+      const { RAG_INDEX_DELAY_MS } = await import('@/lib/config/rag-config');
+      
+      // Update status to processing
+      await supabase.from('files').update({ 
+        processing_status: 'processing',
+        metadata: {
+          ...photoFile.metadata,
+          processing_phase: 'vision_analysis',
+        },
+      }).eq('id', photoFile.id);
+
+      // Analyze photo
+      const analysisDescription = await parseImage(publicUrl);
+      
+      if (analysisDescription) {
+        const ragQueuedAt = new Date();
+        
+        // Update with analysis and queue metadata
+        await supabase.from('files').update({
+          description: analysisDescription,
+          processing_status: 'processing',
+          metadata: {
+            ...photoFile.metadata,
+            processing_phase: 'rag_queued',
+            scene_analysis: analysisDescription,
+            vision_analyzed_at: new Date().toISOString(),
+            rag_queued_at: ragQueuedAt.toISOString(),
+          },
+        }).eq('id', photoFile.id);
+
+        // Queue for RAG indexing with delay
+        const indexParams = {
+          type: 'photo' as const,
+          resourceId: photoFile.id,
+          companyId: user.companyId,
+          content: analysisDescription,
+          metadata: {
+            equipment_id: equipmentId || undefined,
+            work_order_id: workOrderId || undefined,
+          },
+        };
+
+        await contentQueue.add(indexParams, `photo-${photoFile.id}`, RAG_INDEX_DELAY_MS);
+        console.log(`[Upload] Photo analyzed and queued for RAG (delay: ${RAG_INDEX_DELAY_MS}ms)`);
+      } else {
+        await supabase.from('files').update({ processing_status: 'failed' }).eq('id', photoFile.id);
+      }
+    } catch (error) {
+      console.error('[Upload] Photo analysis failed:', error);
+      await supabase.from('files').update({ processing_status: 'failed' }).eq('id', photoFile.id);
     }
 
     return NextResponse.json({ data: photoFile })

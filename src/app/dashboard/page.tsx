@@ -11,13 +11,17 @@ import { EquipmentCreateForm } from '@/components/equipment/equipment-create-for
 import { EquipmentDetail } from '@/components/equipment/equipment-detail'
 import { DocumentList } from '@/components/documents/document-list'
 import { DocumentUploadForm } from '@/components/documents/document-upload-form'
+import { PhotoList } from '@/components/photos/photo-list'
+import { PhotoUploadForm } from '@/components/photos/photo-upload-form'
 import { SideNav } from '@/components/navigation/side-nav'
-import { MessageCircle, ClipboardList, Wrench, FileText } from 'lucide-react'
+import { MessageCircle, ClipboardList, Wrench, Database, FileText, Image } from 'lucide-react'
+import { Tabs } from '@/components/tabs/tab-navigation'
 import type { WorkOrder, Equipment } from '@/types'
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
-  const [activeNav, setActiveNav] = useState<'chat' | 'work-orders' | 'equipment' | 'documents'>('chat')
+  const [activeNav, setActiveNav] = useState<'chat' | 'work-orders' | 'equipment' | 'data-hub'>('chat')
+  const [dataHubTab, setDataHubTab] = useState<'documents' | 'photos'>('documents')
   
   // Work Order state
   const [isCreateWorkOrderOpen, setIsCreateWorkOrderOpen] = useState(false)
@@ -32,6 +36,10 @@ export default function DashboardPage() {
   // Document state
   const [isUploadDocumentOpen, setIsUploadDocumentOpen] = useState(false)
   const [documentRefreshTrigger, setDocumentRefreshTrigger] = useState(0)
+
+  // Photo state
+  const [isUploadPhotoOpen, setIsUploadPhotoOpen] = useState(false)
+  const [photoRefreshTrigger, setPhotoRefreshTrigger] = useState(0)
   
   // Chat state
   const [chatMessages, setChatMessages] = useState<Message[]>([])
@@ -56,7 +64,12 @@ export default function DashboardPage() {
     { id: 'chat', label: 'Chat', icon: <MessageCircle className="h-5 w-5" /> },
     { id: 'work-orders', label: 'Work Orders', icon: <ClipboardList className="h-5 w-5" /> },
     { id: 'equipment', label: 'Equipment', icon: <Wrench className="h-5 w-5" /> },
-    { id: 'documents', label: 'Documents', icon: <FileText className="h-5 w-5" /> },
+    { id: 'data-hub', label: 'Data Hub', icon: <Database className="h-5 w-5" /> },
+  ]
+
+  const dataHubTabs = [
+    { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
+    { id: 'photos', label: 'Photos', icon: <Image className="h-4 w-4" /> },
   ]
 
   const handleWorkOrderCreateSuccess = () => setWorkOrderRefreshTrigger((p) => p + 1)
@@ -72,6 +85,7 @@ export default function DashboardPage() {
   }
 
   const handleDocumentUploadSuccess = () => setDocumentRefreshTrigger((p) => p + 1)
+  const handlePhotoUploadSuccess = () => setPhotoRefreshTrigger((p) => p + 1)
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)]">
@@ -111,9 +125,9 @@ export default function DashboardPage() {
                   <p className="text-xs text-gray-600">View and update equipment records</p>
                 </div>
                 <div className="p-4 bg-white rounded-lg border border-gray-200">
-                  <FileText className="h-5 w-5 text-brand mb-2" />
-                  <h3 className="font-medium text-gray-900 text-sm mb-1">Documents</h3>
-                  <p className="text-xs text-gray-600">Access manuals and safety guides</p>
+                  <Database className="h-5 w-5 text-brand mb-2" />
+                  <h3 className="font-medium text-gray-900 text-sm mb-1">Data Hub</h3>
+                  <p className="text-xs text-gray-600">Access manuals, photos and files</p>
                 </div>
               </div>
             </div>
@@ -145,11 +159,31 @@ export default function DashboardPage() {
           />
         )}
 
-        {activeNav === 'documents' && (
-          <DocumentList
-            key={documentRefreshTrigger}
-            onCreateClick={() => setIsUploadDocumentOpen(true)}
-          />
+        {activeNav === 'data-hub' && (
+          <div className="space-y-4">
+            <div className="border-b border-gray-200">
+              <Tabs
+                tabs={dataHubTabs}
+                activeTab={dataHubTab}
+                onTabChange={(tabId) => setDataHubTab(tabId as 'documents' | 'photos')}
+                className="px-0"
+              />
+            </div>
+            
+            {dataHubTab === 'documents' && (
+              <DocumentList
+                key={documentRefreshTrigger}
+                onCreateClick={() => setIsUploadDocumentOpen(true)}
+              />
+            )}
+            
+            {dataHubTab === 'photos' && (
+              <PhotoList
+                key={photoRefreshTrigger}
+                onCreateClick={() => setIsUploadPhotoOpen(true)}
+              />
+            )}
+          </div>
         )}
       </main>
 
@@ -186,6 +220,13 @@ export default function DashboardPage() {
         open={isUploadDocumentOpen}
         onOpenChange={setIsUploadDocumentOpen}
         onSuccess={handleDocumentUploadSuccess}
+      />
+
+      {/* Photo Modals */}
+      <PhotoUploadForm
+        open={isUploadPhotoOpen}
+        onOpenChange={setIsUploadPhotoOpen}
+        onSuccess={handlePhotoUploadSuccess}
       />
     </div>
   )

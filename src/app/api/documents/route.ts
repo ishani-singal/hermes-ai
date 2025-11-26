@@ -14,6 +14,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, forbidden } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
+import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
 import type {
   Document,
   DocumentListFilters,
@@ -22,8 +23,8 @@ import type {
   DocumentScope,
   DocumentStatus,
 } from '@/types';
-import { documentQueue } from '@/lib/queue/simple-queue';
-import type { IndexDocumentParams } from '@/mastra/services/rag-service';
+import { contentQueue } from '@/lib/queue/simple-queue';
+import type { IndexContentParams } from '@/mastra/services/rag-service';
 
 // =============================================
 // GET - List Documents
@@ -385,23 +386,43 @@ export const POST = route()
       }
     }
 
-    // Enqueue background processing job for PDF parsing and RAG ingestion
+    // Queue for background RAG indexing with delay
+    // Delay allows time for agent to add metadata (equipment/work order links, AI summary)
+    // before indexing, reducing the need for re-indexing
     try {
-      const processingParams: IndexDocumentParams = {
-        documentId: fileRecord.id,
+      const ragQueuedAt = new Date();
+      
+      // Update metadata to track RAG queue status
+      await supabase
+        .from('files')
+        .update({
+          metadata: {
+            ...fileRecord.metadata,
+            processing_phase: 'rag_queued',
+            rag_queued_at: ragQueuedAt.toISOString(),
+          },
+        })
+        .eq('id', fileRecord.id);
+      
+      const processingParams: IndexContentParams = {
+        type: 'document',
+        resourceId: fileRecord.id,
         companyId: user!.companyId,
+        fileUrl: fileRecord.file_url,
         documentTitle: fileRecord.description || fileRecord.file_name,
         documentType: type,
-        equipmentId: validatedEquipmentId || undefined,
-        equipmentName,
-        workOrderId: validatedWorkOrderId || undefined,
-        workOrderTitle,
         scope: scope,
-        fileUrl: fileRecord.file_url,
+        metadata: {
+          equipment_id: validatedEquipmentId || undefined,
+          equipment_name: equipmentName,
+          work_order_id: validatedWorkOrderId || undefined,
+          work_order_title: workOrderTitle,
+        },
       };
 
-      await documentQueue.add(processingParams, `doc-${fileRecord.id}`);
-      console.log(`[Upload] Document queued for RAG indexing: ${fileRecord.id}`);
+      // Queue with configurable delay (default 10 minutes)
+      await contentQueue.add(processingParams, `doc-${fileRecord.id}`, RAG_INDEX_DELAY_MS);
+      console.log(`[Upload] Document queued for RAG indexing (delay: ${RAG_INDEX_DELAY_MS}ms): ${fileRecord.id}`);
     } catch (error) {
       console.error('[Upload] Failed to queue document for RAG indexing:', error);
       // Don't fail the upload - document is uploaded and accessible, indexing can be retried

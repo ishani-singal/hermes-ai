@@ -203,8 +203,76 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
         </div>
       </div>
 
-      {/* Documents Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Documents List - Responsive: Cards on mobile, Table on desktop */}
+      {/* Mobile Cards (visible on small screens) */}
+      <div className="space-y-3 sm:hidden">
+        {documents.map((doc) => (
+          <div key={doc.id} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-start gap-3">
+              <File className="h-8 w-8 text-brand flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {doc.title}
+                </p>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">
+                  {doc.display_id}
+                </p>
+                
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <Badge variant="info" size="sm">
+                    {getTypeLabel(doc.type)}
+                  </Badge>
+                  <Badge variant="default" size="sm">
+                    {getScopeLabel(doc.scope)}
+                  </Badge>
+                  <Badge variant={getStatusBadgeVariant(doc.status)} size="sm">
+                    {doc.status}
+                  </Badge>
+                </div>
+                
+                {doc.equipment && (
+                  <p className="text-xs text-gray-600 mt-2">
+                    <span className="font-medium">Equipment:</span> {doc.equipment.name}
+                  </p>
+                )}
+                
+                <p className="text-xs text-gray-500 mt-1">
+                  {(doc.file_size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex flex-col gap-1">
+                {doc.file_url && doc.status === 'uploaded' && (
+                  <a
+                    href={doc.file_url}
+                    download
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 text-brand hover:bg-brand/10 rounded transition-colors"
+                    title="Download"
+                  >
+                    <Download className="h-5 w-5" />
+                  </a>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDeleteClick(doc)}
+                    disabled={deletingId === doc.id}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                    title="Delete"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table (hidden on small screens) */}
+      <div className="hidden sm:block bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

@@ -1,4 +1,4 @@
-import { MessageCircle, Loader2 } from 'lucide-react'
+import { MessageCircle, Loader2, FileText } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Message } from './chat'
@@ -43,6 +43,19 @@ export function ChatMessages({ messages, loading, bottomRef }: ChatMessagesProps
                     {m.photoAttachment.displayId && (
                       <p className="text-xs text-gray-500 mt-1">{m.photoAttachment.displayId}</p>
                     )}
+                  </div>
+                )}
+                
+                {/* Document Attachment */}
+                {m.documentAttachment && (
+                  <div className="mb-2 flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
+                    <FileText className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700 truncate">{m.documentAttachment.fileName}</p>
+                      {m.documentAttachment.displayId && (
+                        <p className="text-xs text-gray-500">{m.documentAttachment.displayId}</p>
+                      )}
+                    </div>
                   </div>
                 )}
                 

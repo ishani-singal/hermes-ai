@@ -342,7 +342,7 @@ export const createWorkOrderTool = createTool({
     title: z.string().describe('Work order title (required, max 255 characters)'),
     description: z.string().optional().describe('Work order description (optional, max 5000 characters)'),
     priority: z.enum(['low', 'medium', 'high', 'critical']).optional().describe('Priority level (default: medium)'),
-    equipment_id: z.string().optional().describe('Equipment ID'),
+    equipment_id: z.string().optional().describe('Equipment display ID (e.g., EQ-ACME-PUMP-001) or UUID. If user mentions equipment by name, use list-eq-tool first to find the display ID.'),
     assigned_to: z.string().optional().describe('User ID to assign to (admin only)'),
     due_date: z.string().optional().describe('Due date (ISO format, e.g., "2025-11-10" or full ISO string)'),
     custom_fields: z.record(z.string(), z.unknown()).optional().describe('Custom fields object'),

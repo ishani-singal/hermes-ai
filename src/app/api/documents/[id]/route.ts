@@ -13,6 +13,9 @@ import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, notFound, forbidden } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
 import type { Document } from '@/types';
+import { contentQueue } from '@/lib/queue/simple-queue';
+import type { IndexContentParams } from '@/mastra/services/rag-service';
+import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
 
 // =============================================
 // GET - Get Single Document by UUID
@@ -65,6 +68,8 @@ export const PATCH = route()
     let body: {
       title?: string;
       type?: string;
+      equipment_id?: string | null;
+      work_order_id?: string | null;
     };
     
     try {
@@ -135,6 +140,85 @@ export const PATCH = route()
 
     if (error || !data) {
       return notFound('Document not found after update');
+    }
+
+    // Track if metadata changed (equipment/work order links) to trigger re-indexing
+    const needsReindex = body.equipment_id !== undefined || body.work_order_id !== undefined;
+
+    // If equipment or work order changed, queue for re-indexing with updated metadata
+    if (needsReindex) {
+      try {
+        // Fetch updated document with relations for metadata
+        const { data: updatedDocument } = await supabase
+          .from('files')
+          .select(`
+            id,
+            description,
+            file_url,
+            processing_status,
+            metadata,
+            equipment_files:equipment_files (
+              equipment:equipment (id, name)
+            ),
+            work_order_files:work_order_files (
+              work_order:work_orders (id, title)
+            )
+          `)
+          .eq('id', data.id)
+          .single();
+
+        if (updatedDocument) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const docData = updatedDocument as any;
+          const equipment = docData.equipment_files?.[0]?.equipment;
+          const workOrder = docData.work_order_files?.[0]?.work_order;
+
+          const indexParams: IndexContentParams = {
+            type: 'document',
+            resourceId: data.id,
+            companyId: user!.companyId,
+            fileUrl: updatedDocument.file_url,
+            documentTitle: updatedDocument.description || data.file_name,
+            documentType: updatedDocument.metadata?.document_type || 'other',
+            scope: updatedDocument.metadata?.scope || 'company',
+            metadata: {
+              ai_summary: updatedDocument.metadata?.ai_summary,
+              equipment_id: equipment?.id,
+              equipment_name: equipment?.name,
+              work_order_id: workOrder?.id,
+              work_order_title: workOrder?.title,
+            },
+          };
+
+          // Check if document is already indexed or still in delay period
+          const isAlreadyIndexed = updatedDocument.processing_status === 'ready';
+          const jobId = `doc-${data.id}`;
+
+          if (isAlreadyIndexed) {
+            // File already indexed - queue immediate re-index with updated metadata
+            await contentQueue.add(indexParams, jobId); // No delay
+            console.log('[DocumentUpdate] Document queued for immediate re-indexing (already indexed)');
+          } else {
+            // File not yet indexed - queue will dedupe with existing delayed job
+            await contentQueue.add(indexParams, jobId, RAG_INDEX_DELAY_MS);
+            console.log('[DocumentUpdate] Document re-queued with updated metadata (delay reset)');
+          }
+
+          // Update metadata to track last update
+          await supabase
+            .from('files')
+            .update({
+              metadata: {
+                ...updatedDocument.metadata,
+                last_metadata_update: new Date().toISOString(),
+              },
+            })
+            .eq('id', data.id);
+        }
+      } catch (queueError) {
+        console.error('[DocumentUpdate] Failed to queue document for re-indexing:', queueError);
+        // Don't fail the update - document is still updated
+      }
     }
 
     return success<Document>(data as Document);

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Radio, StopCircle, Plus, Camera, Image } from 'lucide-react'
+import { Send, Mic, Radio, StopCircle, Plus, Camera, Image, FileText } from 'lucide-react'
 import { CameraModal } from '@/components/ui/camera-modal'
 
 type ChatInputProps = {
@@ -18,6 +18,7 @@ type ChatInputProps = {
   isTTSPlaying: boolean
   onStopTTS: () => void
   onPhotoSelect?: (file: File) => void
+  onDocumentSelect?: (file: File) => void
 }
 
 export function ChatInput({
@@ -34,11 +35,13 @@ export function ChatInput({
   isTTSPlaying,
   onStopTTS,
   onPhotoSelect,
+  onDocumentSelect,
 }: ChatInputProps) {
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [showCameraModal, setShowCameraModal] = useState(false)
   const [hasCameraDevice, setHasCameraDevice] = useState<boolean | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
 
   // Check for camera availability on mount
   useEffect(() => {
@@ -68,13 +71,23 @@ export function ChatInput({
   // 4. TTS is playing
   const isSendDisabled = loading || streamMode || (listening && pushToTalkMode) || isTTSPlaying
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file && onPhotoSelect) {
       onPhotoSelect(file)
       setShowAttachMenu(false)
     }
-    // Reset input so same file can be selected again
+    if (e.target) {
+      e.target.value = ''
+    }
+  }
+
+  const handleDocumentFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && onDocumentSelect) {
+      onDocumentSelect(file)
+      setShowAttachMenu(false)
+    }
     if (e.target) {
       e.target.value = ''
     }
@@ -96,8 +109,13 @@ export function ChatInput({
     }
   }
 
-  const handleGalleryClick = () => {
-    fileInputRef.current?.click()
+  const handleUploadPhotoClick = () => {
+    photoInputRef.current?.click()
+    setShowAttachMenu(false)
+  }
+
+  const handleUploadDocumentClick = () => {
+    documentInputRef.current?.click()
     setShowAttachMenu(false)
   }
 
@@ -138,11 +156,18 @@ export function ChatInput({
                   Take Photo
                 </button>
                 <button
-                  onClick={handleGalleryClick}
+                  onClick={handleUploadPhotoClick}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                 >
                   <Image className="h-4 w-4" />
-                  Choose from Gallery
+                  Upload Photo
+                </button>
+                <button
+                  onClick={handleUploadDocumentClick}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                >
+                  <FileText className="h-4 w-4" />
+                  Upload Document
                 </button>
               </div>
             </>
@@ -150,12 +175,20 @@ export function ChatInput({
           
           {/* Hidden file inputs */}
           <input
-            ref={fileInputRef}
+            ref={photoInputRef}
             type="file"
             accept="image/*"
-            onChange={handleFileSelect}
+            onChange={handlePhotoFileSelect}
             className="hidden"
-            aria-label="Gallery input"
+            aria-label="Photo upload input"
+          />
+          <input
+            ref={documentInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt"
+            onChange={handleDocumentFileSelect}
+            className="hidden"
+            aria-label="Document upload input"
           />
         </div>
 

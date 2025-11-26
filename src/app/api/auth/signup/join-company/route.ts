@@ -28,11 +28,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceRoleClient()
 
-    // Step 1: Check if company exists
+    // Step 1: Check if company exists (trim whitespace)
+    const trimmedCompanyName = companyName.trim()
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .select('*')
-      .ilike('name', companyName)
+      .ilike('name', trimmedCompanyName)
       .single()
 
     if (companyError || !company) {

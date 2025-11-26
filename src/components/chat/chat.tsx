@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useVoice } from '@/hooks/useVoice'
 import { ChatMessages } from './chat-messages'
 import { ChatInput } from './chat-input'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, FileText } from 'lucide-react'
 
 export type Message = {
   id: string
@@ -15,6 +15,12 @@ export type Message = {
     uploadId: string
     displayId?: string
     previewUrl: string
+  }
+  documentAttachment?: {
+    id: string
+    uploadId: string
+    displayId?: string
+    fileName: string
   }
 }
 
@@ -33,11 +39,20 @@ type PhotoAttachment = {
   uploadId?: string
 }
 
+type DocumentAttachment = {
+  id: string
+  file: File
+  status: 'uploading' | 'processing' | 'ready' | 'error'
+  uploadId?: string
+  displayId?: string
+}
+
 export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<PhotoAttachment[]>([])
+  const [documents, setDocuments] = useState<DocumentAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const { start, stop, listening, partial, lastFinal, error: voiceError, resetFinal } = useVoice({ lang: 'en-US' })
   const processingRef = useRef(false)
@@ -499,6 +514,126 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     })
   }
 
+  const handleDocumentSelect = async (file: File) => {
+    const id = Math.random().toString(36).substring(7)
+    
+    const newDoc: DocumentAttachment = {
+      id,
+      file,
+      status: 'uploading'
+    }
+    
+    setDocuments(prev => [...prev, newDoc])
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      // Use filename (without extension) as title
+      const fileName = file.name.replace(/\.[^/.]+$/, '')
+      formData.append('title', fileName)
+      formData.append('type', 'other') // Default type
+      formData.append('scope', 'company') // Default scope
+      
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!res.ok) throw new Error('Upload failed')
+      
+      const data = await res.json()
+      const docId = data.data?.id || data.id
+      const displayId = data.data?.display_id || data.display_id
+      
+      // Remove from attachment area - document will appear in chat
+      setDocuments(prev => prev.filter(d => d.id !== id))
+      
+      // Add analyzing message to chat with document reference
+      const docRef = displayId || docId
+      const analyzingMessage: Message = {
+        id: 'analyzing-doc-' + String(Date.now()) + Math.random().toString(16).slice(2),
+        role: 'assistant',
+        text: '',
+        documentAttachment: {
+          id,
+          uploadId: docId,
+          displayId,
+          fileName: file.name,
+        },
+      }
+      
+      setMessages((m) => [...m, analyzingMessage])
+      
+      // Auto-send message to agent to analyze document (mirror photo pattern)
+      const message = `I uploaded a document "${file.name}" (${docRef}). Can you analyze it and tell me what it contains?`
+      
+      // Call agent to analyze
+      setLoading(true)
+      
+      try {
+        const aiRes = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ 
+            message,
+            threadId: threadId || undefined,
+            streamMode: false,
+          }),
+        })
+        
+        if (!aiRes.ok) {
+          throw new Error('AI analysis failed')
+        }
+        
+        const json = await aiRes.json()
+        
+        const responseThreadId = json?.data?.threadId || json?.threadId
+        if (responseThreadId && responseThreadId !== threadId) {
+          setThreadId(responseThreadId)
+        }
+        
+        const assistantText =
+          json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
+        
+        // Replace the "analyzing" message with the actual analysis
+        setMessages((m) => m.map(msg => 
+          msg.id === analyzingMessage.id
+            ? {
+                ...msg,
+                text: String(assistantText),
+              }
+            : msg
+        ))
+        
+      } catch (aiErr) {
+        console.error('AI analysis error:', aiErr)
+        setMessages((m) => [
+          ...m,
+          {
+            id: 'a-err-' + String(Date.now()),
+            role: 'assistant',
+            text: 'Sorry — I had trouble analyzing the document. ' + (aiErr instanceof Error ? aiErr.message : ''),
+          },
+        ])
+      } finally {
+        setLoading(false)
+      }
+      
+    } catch (err) {
+      console.error('Document upload error:', err)
+      setDocuments(prev => prev.map(d => 
+        d.id === id 
+          ? { ...d, status: 'error' }
+          : d
+      ))
+    }
+  }
+
+  const removeDocument = (id: string) => {
+    setDocuments(prev => prev.filter(d => d.id !== id))
+  }
+
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto">
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -545,6 +680,40 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           </div>
         )}
 
+        {/* Document Previews */}
+        {documents.length > 0 && (
+          <div className="px-4 pt-2 flex gap-2 overflow-x-auto">
+            {documents.map(doc => (
+              <div key={doc.id} className="relative group flex-shrink-0">
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 ${doc.status === 'uploading' ? 'opacity-50' : ''}`}>
+                  <FileText className="w-5 h-5 text-gray-500" />
+                  <span className="text-sm text-gray-700 max-w-[120px] truncate">
+                    {doc.file.name}
+                  </span>
+                  
+                  {(doc.status === 'uploading' || doc.status === 'processing') && (
+                    <Loader2 className="w-4 h-4 text-brand animate-spin" />
+                  )}
+                </div>
+                
+                {doc.status === 'error' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-red-50/80 rounded-lg">
+                    <span className="text-xs text-red-600 font-medium">Error</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => removeDocument(doc.id)}
+                  title="Remove document"
+                  className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-3 h-3 text-gray-500" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {error && (
           <div className="px-4 mt-2">
             <div className="text-sm text-red-600 mb-2">{error}</div>
@@ -565,6 +734,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         isTTSPlaying={isTTSPlaying}
         onStopTTS={handleStopTTS}
         onPhotoSelect={handlePhotoSelect}
+        onDocumentSelect={handleDocumentSelect}
       />
       </div>
     </div>

@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { Upload, X } from 'lucide-react'
-import { Equipment } from '@/types'
+import { Equipment, WorkOrder } from '@/types'
 
 export interface DocumentUploadFormProps {
   open: boolean
@@ -23,22 +23,26 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [equipment, setEquipment] = useState<Equipment[]>([])
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [loadingEquipment, setLoadingEquipment] = useState(false)
+  const [loadingWorkOrders, setLoadingWorkOrders] = useState(false)
 
   const [formData, setFormData] = useState({
     title: '',
     type: 'manual',
     scope: 'company',
     equipmentId: '',
+    workOrderId: '',
     description: '',
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Fetch equipment list when dialog opens
+  // Fetch equipment and work orders when dialog opens
   useEffect(() => {
     if (open) {
       fetchEquipment()
+      fetchWorkOrders()
     }
   }, [open])
 
@@ -54,6 +58,21 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
       console.error('Failed to fetch equipment:', err)
     } finally {
       setLoadingEquipment(false)
+    }
+  }
+
+  const fetchWorkOrders = async () => {
+    setLoadingWorkOrders(true)
+    try {
+      const response = await fetch('/api/work-orders?status=open,in_progress')
+      if (response.ok) {
+        const data = await response.json()
+        setWorkOrders(data.data || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch work orders:', err)
+    } finally {
+      setLoadingWorkOrders(false)
     }
   }
 
@@ -119,6 +138,9 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
       if (formData.scope === 'equipment' && formData.equipmentId) {
         docFormData.append('equipment_id', formData.equipmentId)
       }
+      if (formData.workOrderId) {
+        docFormData.append('work_order_id', formData.workOrderId)
+      }
       if (formData.description?.trim()) {
         docFormData.append('description', formData.description.trim())
       }
@@ -147,6 +169,7 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
         type: 'manual',
         scope: 'company',
         equipmentId: '',
+        workOrderId: '',
         description: '',
       })
       setSelectedFile(null)
@@ -170,6 +193,7 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
         type: 'manual',
         scope: 'company',
         equipmentId: '',
+        workOrderId: '',
         description: '',
       })
       setSelectedFile(null)
@@ -284,6 +308,27 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
               )}
             </div>
           )}
+
+          {/* Work Order Selector - Optional */}
+          <div>
+            <label htmlFor="doc-work-order" className="block text-sm font-medium text-gray-700 mb-1">
+              Link to Work Order (Optional)
+            </label>
+            <select
+              id="doc-work-order"
+              value={formData.workOrderId}
+              onChange={(e) => setFormData({ ...formData, workOrderId: e.target.value })}
+              disabled={isSubmitting || loadingWorkOrders}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+            >
+              <option value="">No work order</option>
+              {workOrders.map((wo) => (
+                <option key={wo.id} value={wo.id}>
+                  {wo.display_id} - {wo.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <Textarea
             label="Description"

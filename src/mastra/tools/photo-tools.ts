@@ -1,16 +1,128 @@
 /**
  * Photo Analysis Tool for Agent
  * 
- * Enables the AI agent to analyze photos using Gemini Vision.
- * Extracts technical descriptions for maintenance context.
+ * Fetches or generates photo analysis using Gemini Vision.
+ * Backend handles RAG indexing - this tool only manages vision analysis.
+ * If analysis exists, returns cached result. Otherwise analyzes and saves.
  */
 
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { parseImage } from '@/lib/parsers/image-parser';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { contentQueue } from '@/lib/queue/simple-queue';
-import type { IndexContentParams } from '@/mastra/services/rag-service';
+
+/**
+ * Get Photo with Equipment Context
+ * Retrieves a photo and includes any linked equipment information
+ * Useful when creating work orders from photos
+ */
+export const getPhotoWithContextTool = createTool({
+  id: 'get-photo-context-tool',
+  description: `Get photo details including any linked equipment and analysis.
+  
+  Use this when:
+  - User wants to create a work order from a photo and you need to know what equipment it's for
+  - You need to get the photo ID/display ID for reference
+  - User asks "what equipment is in this photo?"
+  
+  Returns:
+  - Photo details (ID, display ID)
+  - Any linked equipment (name, display ID)
+  - Photo analysis/description if available`,
+  
+  inputSchema: z.object({
+    photoId: z.string().describe('The UUID or display_id of the photo (e.g., "PHOTO-ACME-0001" or a UUID)'),
+  }),
+  
+  outputSchema: z.object({
+    success: z.boolean(),
+    photoId: z.string(),
+    displayId: z.string().optional(),
+    description: z.string().optional(),
+    equipmentId: z.string().optional(),
+    equipmentDisplayId: z.string().optional(),
+    equipmentName: z.string().optional(),
+    error: z.string().optional(),
+  }),
+  
+  execute: async ({ context, runtimeContext }) => {
+    const { photoId } = context;
+    
+    console.log('[GetPhotoContextTool] Getting photo context:', photoId);
+    
+    let companyId = runtimeContext.get('companyId') as string;
+    if (!companyId) {
+      const ctx = runtimeContext as unknown as { companyId?: string; contextData?: { companyId?: string } };
+      companyId = ctx.companyId || ctx.contextData?.companyId || '';
+    }
+    
+    if (!companyId) {
+      console.error('[GetPhotoContextTool] No company ID found');
+      return {
+        success: false,
+        photoId,
+        error: 'Company ID not found in context',
+      };
+    }
+    
+    try {
+      const supabase = createServiceRoleClient();
+      
+      // Fetch photo with equipment link
+      let query = supabase
+        .from('files')
+        .select(`
+          id, file_url, description, processing_status, bucket_id, metadata,
+          equipment_files:equipment_files (
+            equipment:equipment (id, name, display_id)
+          )
+        `)
+        .eq('company_id', companyId)
+        .eq('bucket_id', 'photos');
+      
+      // Try UUID first, then display_id
+      if (photoId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        query = query.eq('id', photoId);
+      } else {
+        query = query.eq('metadata->>display_id', photoId);
+      }
+      
+      const { data: photo, error: fetchError } = await query.maybeSingle();
+      
+      if (fetchError || !photo) {
+        console.error('[GetPhotoContextTool] Photo not found:', fetchError);
+        return {
+          success: false,
+          photoId,
+          error: 'Photo not found or does not belong to your company',
+        };
+      }
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const equipmentLink = (photo as any).equipment_files?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const equipment = equipmentLink?.equipment as any;
+      
+      return {
+        success: true,
+        photoId: photo.id,
+        displayId: photo.metadata?.display_id || undefined,
+        description: photo.description,
+        equipmentId: equipment?.id,
+        equipmentDisplayId: equipment?.display_id,
+        equipmentName: equipment?.name,
+      };
+      
+    } catch (error) {
+      console.error('[GetPhotoContextTool] Error getting photo context:', error);
+      return {
+        success: false,
+        photoId,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  },
+});
 
 /**
  * Analyze a photo with Gemini Vision
@@ -154,14 +266,13 @@ export const analyzePhotoTool = createTool({
       }
       
       // Save description to database
+      // Note: RAG queuing is handled by backend, not by agent tool
       const { error: updateError } = await supabase
         .from('files')
         .update({
           description: description,
-          processing_status: 'processing', // Keep as processing, RAG will complete it
           metadata: {
             ...photo.metadata,
-            processing_phase: 'vision_complete',
             scene_analysis: description,
             vision_analyzed_at: new Date().toISOString(),
           },
@@ -178,41 +289,6 @@ export const analyzePhotoTool = createTool({
         };
       }
       
-      // Queue photo for RAG indexing
-      // NOTE: Future enhancement - move this to a background service that:
-      // 1. Polls for files with status='uploaded' (for documents) or 'processing' with vision_complete (for photos)
-      // 2. Sets status to 'processing' before starting RAG
-      // 3. Sets status to 'ready' after RAG completes
-      // 4. Uses metadata.processing_phase to track: vision_analysis → vision_complete → rag_indexing → complete
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const photoData = photo as any;
-        const equipment = photoData.equipment_files?.[0]?.equipment;
-        const workOrder = photoData.work_order_files?.[0]?.work_order;
-        
-        const indexParams: IndexContentParams = {
-          type: 'photo',
-          resourceId: photo.id,
-          companyId: companyId,
-          content: description, // Use pre-extracted description, skip parsing
-          metadata: {
-            photo_description: description,
-            equipment_id: equipment?.id,
-            equipment_name: equipment?.name,
-            work_order_id: workOrder?.id,
-            work_order_title: workOrder?.title,
-          },
-        };
-        
-        // Queue immediately for RAG indexing
-        await contentQueue.add(indexParams, `photo-${photo.id}`);
-        
-        console.log('[AnalyzePhotoTool] Photo queued for RAG indexing');
-      } catch (queueError) {
-        console.error('[AnalyzePhotoTool] Failed to queue photo for RAG indexing:', queueError);
-        // Don't fail the analysis - photo is still analyzed and accessible
-      }
-      
       console.log('[AnalyzePhotoTool] Analysis completed successfully');
       
       return {
@@ -225,6 +301,118 @@ export const analyzePhotoTool = createTool({
       
     } catch (error) {
       console.error('[AnalyzePhotoTool] Error analyzing photo:', error);
+      return {
+        success: false,
+        photoId,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  },
+});
+
+/**
+ * Patch Photo Tool
+ * Updates photo metadata to link it to equipment or work orders
+ */
+export const patchPhotoTool = createTool({
+  id: 'patch-photo-tool',
+  description: `Update photo metadata to link it to equipment or work orders.
+  
+  Use this when:
+  - You've created a work order and need to link the source photo to it
+  - You need to link/unlink a photo from equipment
+  - You need to link/unlink a photo from a work order
+  - You want to update link type (before/after/evidence/reference)
+  
+  Returns:
+  - Updated photo details
+  - Confirmation of links applied`,
+  
+  inputSchema: z.object({
+    photoId: z.string().describe('The photo UUID or display_id to update'),
+    equipment_id: z.string().optional().describe('Equipment display ID or UUID to link. Pass null to remove equipment link.'),
+    work_order_id: z.string().optional().describe('Work order display ID or UUID to link. Pass null to remove work order link.'),
+    link_type: z.enum(['before', 'after', 'evidence', 'reference', 'profile', 'other']).optional().describe('Type of link (default: evidence for work orders, reference for equipment)'),
+  }),
+  
+  outputSchema: z.object({
+    success: z.boolean(),
+    photoId: z.string(),
+    displayId: z.string().optional(),
+    linkedEquipment: z.boolean().optional(),
+    linkedWorkOrder: z.boolean().optional(),
+    error: z.string().optional(),
+  }),
+  
+  execute: async ({ context, runtimeContext }) => {
+    const { photoId, equipment_id, work_order_id, link_type } = context;
+    
+    if (!photoId) {
+      return { success: false, photoId: '', error: 'Photo ID is required' };
+    }
+    
+    console.log('[PatchPhotoTool] Updating photo:', photoId, { equipment_id, work_order_id, link_type });
+    
+    try {
+      const BASE_URL = process.env.INTERNAL_API_BASE_URL || 'http://localhost:3000';
+      const cookieValue = runtimeContext.get('cookie');
+      const cookieHeader = cookieValue ? String(cookieValue) : '';
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (cookieHeader) {
+        headers['cookie'] = cookieHeader;
+      }
+      
+      const patchPayload: Record<string, unknown> = {};
+      
+      if (equipment_id !== undefined) {
+        patchPayload.equipment_id = equipment_id;
+        if (equipment_id) {
+          patchPayload.link_type = link_type || 'reference';
+        }
+      }
+      
+      if (work_order_id !== undefined) {
+        patchPayload.work_order_id = work_order_id;
+        if (work_order_id) {
+          patchPayload.link_type = link_type || 'evidence';
+        }
+      }
+      
+      const response = await fetch(
+        `${BASE_URL}/api/photos/${photoId}`,
+        {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(patchPayload),
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PatchPhotoTool] PATCH failed:', errorText);
+        return {
+          success: false,
+          photoId,
+          error: errorText || `HTTP ${response.status}`,
+        };
+      }
+      
+      const result = await response.json();
+      
+      return {
+        success: true,
+        photoId: result.data?.id || photoId,
+        displayId: result.data?.display_id || undefined,
+        linkedEquipment: !!equipment_id,
+        linkedWorkOrder: !!work_order_id,
+      };
+      
+    } catch (error) {
+      console.error('[PatchPhotoTool] Error updating photo:', error);
       return {
         success: false,
         photoId,

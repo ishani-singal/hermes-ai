@@ -12,7 +12,6 @@ import { MDocument } from '@mastra/rag';
 import { namespace } from '@/lib/pinecone/client';
 import { parsePDF } from '@/lib/parsers/pdf-parser';
 import { parseImage } from '@/lib/parsers/image-parser';
-import { parseVideo } from '@/lib/parsers/video-parser';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // ============================================
@@ -34,13 +33,28 @@ export interface IndexDocumentParams {
   fileUrl: string;
 }
 
+export interface IndexPhotoParams {
+  photoId: string;
+  companyId: string;
+  fileUrl: string;
+  content?: string;  // Pre-extracted description from vision analysis
+  equipmentId?: string;
+  equipmentName?: string;
+  workOrderId?: string;
+  workOrderTitle?: string;
+}
+
 export interface IndexContentParams {
   type: ContentType;
   resourceId: string;
   companyId: string;
   fileUrl?: string;
-  content?: string;  // Pre-extracted text (for chat conversations)
+  content?: string;  // Pre-extracted text (for photo descriptions)
   metadata: Record<string, unknown>;
+  // Document-specific fields (used when type === 'document')
+  documentTitle?: string;
+  documentType?: string;
+  scope?: 'company' | 'equipment';
 }
 
 export interface SearchParams {
@@ -179,26 +193,84 @@ export async function indexDocument(params: IndexDocumentParams): Promise<void> 
 }
 
 /**
- * Index arbitrary content (photos, videos, chat conversations)
+ * Index arbitrary content (photos, videos, chat conversations, documents)
  * 
- * Generic function for indexing different content types.
- * Can be extended in the future.
+ * ROUTER FUNCTION: Dispatches to specialized indexing functions based on content type.
  */
 export async function indexContent(params: IndexContentParams): Promise<void> {
-  const { type, resourceId, companyId, fileUrl, content, metadata } = params;
+  const { type, resourceId, companyId, fileUrl, content, metadata, documentTitle, documentType, scope } = params;
 
-  console.log(`[RAG] Indexing ${type}: ${resourceId}`);
+  switch (type) {
+    case 'document':
+      if (!fileUrl) throw new Error('fileUrl is required for document indexing');
+      return indexDocument({
+        documentId: resourceId,
+        companyId,
+        documentTitle: documentTitle || (metadata.document_title as string) || 'Untitled',
+        documentType: documentType || (metadata.document_type as string) || 'other',
+        equipmentId: metadata.equipment_id as string | undefined,
+        equipmentName: metadata.equipment_name as string | undefined,
+        workOrderId: metadata.work_order_id as string | undefined,
+        workOrderTitle: metadata.work_order_title as string | undefined,
+        scope: scope || (metadata.scope as 'company' | 'equipment') || 'company',
+        fileUrl,
+      });
+
+    case 'photo':
+      if (!fileUrl && !content) throw new Error('fileUrl or content is required for photo indexing');
+      return indexPhoto({
+        photoId: resourceId,
+        companyId,
+        fileUrl: fileUrl || '',
+        content,
+        equipmentId: metadata.equipment_id as string | undefined,
+        equipmentName: metadata.equipment_name as string | undefined,
+        workOrderId: metadata.work_order_id as string | undefined,
+        workOrderTitle: metadata.work_order_title as string | undefined,
+      });
+
+    case 'video':
+      // TODO: Implement indexVideo when needed
+      throw new Error('Video indexing not yet implemented');
+
+    case 'chat':
+      // TODO: Implement indexChat when needed
+      throw new Error('Chat indexing not yet implemented');
+
+    default:
+      throw new Error(`Unknown content type: ${type}`);
+  }
+}
+
+/**
+ * Process and index a photo
+ * 
+ * Handles: Vision analysis (if not pre-extracted) → Chunk → Upsert to Pinecone
+ */
+export async function indexPhoto(params: IndexPhotoParams): Promise<void> {
+  const {
+    photoId,
+    companyId,
+    fileUrl,
+    content,
+    equipmentId,
+    equipmentName,
+    workOrderId,
+    workOrderTitle,
+  } = params;
+
+  console.log(`[RAG] Indexing photo: ${photoId}`);
   const supabase = createServiceRoleClient();
 
   try {
-    // Update status to processing (if not already set by vision analysis)
-    // For photos, this may already be 'processing' from vision analysis
+    // Get current file state
     const { data: currentFile } = await supabase
       .from('files')
-      .select('processing_status, metadata')
-      .eq('id', resourceId)
+      .select('processing_status, metadata, description')
+      .eq('id', photoId)
       .single();
-    
+
+    // Update status to processing if not already
     if (currentFile?.processing_status !== 'processing') {
       await supabase.from('files')
         .update({ 
@@ -208,36 +280,22 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
             processing_phase: 'rag_indexing',
           }
         })
-        .eq('id', resourceId);
-    } else {
-      // Already processing (e.g., from vision analysis), just update phase
-      await supabase.from('files')
-        .update({ 
-          metadata: {
-            ...currentFile?.metadata,
-            processing_phase: 'rag_indexing',
-          }
-        })
-        .eq('id', resourceId);
+        .eq('id', photoId);
     }
 
-    // Step 1: Extract text based on content type
+    // Step 1: Get text content - use pre-extracted or analyze now
     let text: string;
     
     if (content) {
-      // Pre-extracted content (e.g., photo descriptions from vision analysis)
+      // Pre-extracted content from vision analysis
       text = content;
       console.log(`[RAG] Using pre-extracted content (${text.length} characters)`);
-    } else if (type === 'document' && fileUrl) {
-      text = await parsePDF(fileUrl);
-    } else if (type === 'photo' && fileUrl) {
+    } else if (fileUrl) {
+      // Analyze image now
+      console.log(`[RAG] Analyzing image: ${fileUrl}`);
       text = await parseImage(fileUrl);
-    } else if (type === 'video' && fileUrl) {
-      text = await parseVideo(fileUrl);
-    } else if (type === 'chat' && content) {
-      text = content;
     } else {
-      throw new Error(`Invalid content type or missing content: ${type}`);
+      throw new Error('No content or fileUrl provided for photo indexing');
     }
 
     // Step 2: Chunk using Mastra
@@ -248,31 +306,40 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
       overlap: 100,
     });
 
-    console.log(`[RAG] Generated ${chunks.length} chunks for ${type}`);
+    console.log(`[RAG] Generated ${chunks.length} chunks for photo`);
 
-    // Step 3: Prepare records with raw text for serverless inference
+    // Validate companyId
     if (!companyId || companyId.trim() === '') {
-      throw new Error('company_id is required for indexing content');
+      throw new Error('company_id is required for indexing photos');
     }
 
-    const records = chunks.map((chunk: { text: string }, idx: number) => ({
-      _id: `${type}-${resourceId}-chunk-${idx}`,
-      text: chunk.text,
-      company_id: companyId,
-      resource_id: resourceId,
-      resource_type: type,
-      chunk_index: idx,
-      created_at: new Date().toISOString(),
-      ...metadata,
-    }));
+    // Step 3: Prepare records with metadata
+    const records = chunks.map((chunk: { text: string }, idx: number) => {
+      const record: Record<string, string | number> = {
+        _id: `photo-${photoId}-chunk-${idx}`,
+        text: chunk.text,
+        company_id: companyId,
+        resource_id: photoId,
+        resource_type: 'photo',
+        chunk_index: idx,
+        created_at: new Date().toISOString(),
+      };
 
-    // Step 4: Upsert to Pinecone (serverless inference will embed the text)
-    console.log(`[RAG] Upserting ${records.length} records for ${type}`);
+      if (equipmentId) record.equipment_id = equipmentId;
+      if (equipmentName) record.equipment_name = equipmentName;
+      if (workOrderId) record.work_order_id = workOrderId;
+      if (workOrderTitle) record.work_order_title = workOrderTitle;
+
+      return record;
+    });
+
+    // Step 4: Upsert to Pinecone
+    console.log(`[RAG] Upserting ${records.length} records for photo`);
     await namespace.upsertRecords(records);
 
-    console.log(`[RAG] ${type} indexing complete: ${resourceId}`);
+    console.log(`[RAG] Photo indexing complete: ${photoId}`);
     
-    // Update status to ready and mark processing complete
+    // Update status to ready
     await supabase.from('files')
       .update({ 
         processing_status: 'ready',
@@ -282,11 +349,11 @@ export async function indexContent(params: IndexContentParams): Promise<void> {
           rag_indexed_at: new Date().toISOString(),
         }
       })
-      .eq('id', resourceId);
+      .eq('id', photoId);
 
   } catch (error) {
-    console.error(`[RAG] Error indexing ${type} ${resourceId}:`, error);
-    await supabase.from('files').update({ processing_status: 'failed' }).eq('id', resourceId);
+    console.error(`[RAG] Error indexing photo ${photoId}:`, error);
+    await supabase.from('files').update({ processing_status: 'failed' }).eq('id', photoId);
     throw error;
   }
 }
