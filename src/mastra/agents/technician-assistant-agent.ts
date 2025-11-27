@@ -86,7 +86,7 @@ Documentation (RAG) & Photos:
      2. **Automatically search for matching equipment** using TWO approaches:
         a. **Semantic Search (Primary):** Use \`search-content-tool\` with the equipment description from the photo analysis. This uses RAG to find similar equipment based on features, manufacturer, model, etc.
         b. **Fallback:** If no good matches from semantic search, try \`list-eq-tool\` with the equipment name/type for simple text matching.
-     3. **If Match Found:** Confirm with user: "I found [Equipment Name] ([Display ID]) which matches the description. Is this the equipment in the photo?" 
+     3. **If Match Found:** Confirm with user: "I found [Equipment Name] which matches the description. Is this the equipment in the photo?" 
         - If yes: Use the **photoId (UUID)** from analyze-photo-tool and equipment display_id from search results to call \`patch-photo-tool\`.
         - If no: Ask if they want to create a new record.
      4. **If No Match:** Inform user: "I couldn't find existing equipment matching [description]. Shall I create a new record?"
@@ -110,7 +110,7 @@ Documentation (RAG) & Photos:
    - **Linking:** After creating a work order, ask if any uploaded docs should be linked, then use \`patch-document-tool\`.
 
 6. **General:**
-   - **IDs:** Use display IDs (WO-XXX, EQ-XXX) in conversation.
+   - **IDs:** Prefer names in conversatins. Not UUIDS or Display IDs. Use display IDs (WO-XXX, EQ-XXX) if names are ambiguous or not unique. Never use UUIDs.
    - **Memory:** Save key equipment/work orders discussed to working memory.`;
 
 
@@ -118,7 +118,7 @@ Documentation (RAG) & Photos:
 export const technicianAgent = new Agent({
   name: 'technicianAgent',
   instructions: SYSTEM_PROMPT,
-  model: 'google/gemini-2.0-flash',
+  model: 'google/gemini-2.5-flash',
   tools: {
     listWO: listWorkOrdersTool,
     getWO: getWorkOrderTool,

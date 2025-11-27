@@ -28,7 +28,7 @@ export interface ImageAnalysisResult {
  */
 function getGeminiClient() {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  
+
   if (!apiKey) {
     throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured');
   }
@@ -45,14 +45,14 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ mimeType: string;
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
-    
+
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64 = buffer.toString('base64');
-    
+
     // Get MIME type from response headers or infer from URL
     const mimeType = response.headers.get('content-type') || 'image/jpeg';
-    
+
     return {
       mimeType,
       data: base64,
@@ -71,15 +71,15 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ mimeType: string;
  */
 export async function parseImage(fileUrl: string): Promise<string> {
   console.log(`[ImageParser] Analyzing image with Gemini Vision: ${fileUrl}`);
-  
+
   try {
     const genAI = getGeminiClient();
-    // Use gemini-2.0-flash - stable model with vision support, available in free tier
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
+    // Use gemini-2.5-flash - stable model with vision support, available in free tier
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(fileUrl);
-    
+
     // Craft prompt for maintenance/technical context
     const prompt = `You are analyzing equipment photos for maintenance technicians. Provide a concise, technical description including:
 
@@ -104,19 +104,19 @@ Limit response to 280 characters for the main description.`;
         },
       },
     ]);
-    
+
     const response = result.response;
     const description = response.text();
-    
+
     if (!description || description.trim().length === 0) {
       console.log('[ImageParser] No description generated');
       return '';
     }
-    
+
     console.log(`[ImageParser] Generated description: ${description.length} characters`);
-    
+
     return description.trim();
-    
+
   } catch (error) {
     console.error('[ImageParser] Error analyzing image with Gemini:', error);
     throw new Error(`Failed to analyze image: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -131,15 +131,15 @@ Limit response to 280 characters for the main description.`;
  */
 export async function parseImageDetailed(fileUrl: string): Promise<ImageAnalysisResult> {
   console.log(`[ImageParser] Analyzing image (detailed) with Gemini Vision: ${fileUrl}`);
-  
+
   try {
     const genAI = getGeminiClient();
-    // Use gemini-2.0-flash - stable model with vision support, available in free tier
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
+    // Use gemini-2.5-flash - stable model with vision support, available in free tier
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(fileUrl);
-    
+
     // Craft prompt for structured output
     const prompt = `Analyze this equipment photo and provide a structured technical analysis in JSON format with these fields:
 
@@ -163,10 +163,10 @@ Be specific and technical. Return ONLY valid JSON.`;
         },
       },
     ]);
-    
+
     const response = result.response;
     const jsonText = response.text().trim();
-    
+
     // Try to parse JSON response
     let analysisData: ImageAnalysisResult;
     try {
@@ -184,11 +184,11 @@ Be specific and technical. Return ONLY valid JSON.`;
         observations: [],
       };
     }
-    
+
     console.log(`[ImageParser] Generated detailed analysis`);
-    
+
     return analysisData;
-    
+
   } catch (error) {
     console.error('[ImageParser] Error analyzing image with Gemini:', error);
     throw new Error(`Failed to analyze image: ${error instanceof Error ? error.message : 'Unknown error'}`);

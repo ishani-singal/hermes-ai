@@ -371,8 +371,14 @@ export const DELETE = route()
       return badRequest('Failed to delete photo');
     }
 
-    // TODO: Also delete from Pinecone if indexed
-    // This would require knowing the chunk IDs or doing a filter delete
+    // Delete from Pinecone if indexed
+    try {
+      const { deletePhotoVectors } = await import('@/lib/pinecone/cleanup');
+      await deletePhotoVectors(photo.id);
+    } catch (pineconeError) {
+      // Log but don't fail - photo is already deleted from storage/database
+      console.error('[PhotoDelete] Failed to delete from Pinecone:', pineconeError);
+    }
 
     return success({ message: 'Photo deleted successfully' });
   });

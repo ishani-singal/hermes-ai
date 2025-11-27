@@ -1,136 +1,71 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, Image, Trash2, Wrench, ClipboardList, Building2 } from 'lucide-react'
+import { useState } from 'react'
+import { Image } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { FilePreview, PreviewFile } from '@/components/common/file-preview'
+import { DeleteConfirmDialog } from '@/components/common/delete-confirm-dialog'
 import { useAuth } from '@/lib/auth/context'
+import { DataHubFile, ViewMode } from '@/components/common/datahub/types'
+import { useFileList } from '@/components/common/datahub/hooks/use-file-list'
+import { useFileEdit } from '@/components/common/datahub/hooks/use-file-edit'
+import { FileListHeader } from '@/components/common/datahub/components/file-list-header'
+import { FileGridView } from '@/components/common/datahub/components/file-grid-view'
+import { FileTableView } from '@/components/common/datahub/components/file-table-view'
+import { FileEditDialog } from '@/components/common/datahub/components/file-edit-dialog'
 
-interface Photo {
-  id: string
-  company_id: string
-  equipment_id?: string
-  work_order_id?: string
-  display_id: string
-  description?: string
-  file_url: string
-  file_size: number
-  link_type?: string
-  status: 'uploaded' | 'processing' | 'ready' | 'failed'
-  created_at: string
-  updated_at: string
-  equipment?: {
-    id: string
-    display_id: string
-    name: string
-  }
-  work_order?: {
-    id: string
-    display_id: string
-    title: string
-  }
-}
-
-interface PhotoListResponse {
-  data: Photo[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
-}
+// Re-export Photo type for compatibility if needed, but internally use DataHubFile
+export type Photo = DataHubFile
 
 export interface PhotoListProps {
   onCreateClick: () => void
   onPhotoClick?: (photo: Photo) => void
+  viewMode?: ViewMode
 }
 
-export function PhotoList({ onCreateClick, onPhotoClick }: PhotoListProps) {
+export function PhotoList({ onCreateClick, onPhotoClick, viewMode = 'grid' }: PhotoListProps) {
   const { companies, activeCompanyId } = useAuth()
-  const [photos, setPhotos] = useState<Photo[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [photoToDelete, setPhotoToDelete] = useState<Photo | null>(null)
+  const [currentViewMode, setCurrentViewMode] = useState<ViewMode>(viewMode)
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+
+  // Use shared hooks
+  const {
+    files: photos,
+    isLoading,
+    error,
+    isRefreshing,
+    deletingId,
+    showDeleteConfirm,
+    fileToDelete: photoToDelete,
+    handleRefresh,
+    handleDeleteClick,
+    handleDeleteConfirm,
+    handleDeleteCancel,
+  } = useFileList({ endpoint: '/api/photos' })
+
+  const {
+    editingFile: editingPhoto,
+    showEditDialog,
+    isSaving: isSavingEdit,
+    editFormData,
+    setEditFormData,
+    equipment,
+    workOrders,
+    loadingEquipment,
+    loadingWorkOrders,
+    handleEditClick,
+    handleEditCancel,
+    handleEditSave,
+  } = useFileEdit({
+    endpoint: '/api/photos',
+    onSaveSuccess: () => handleRefresh()
+  })
 
   const activeCompany = companies.find(uc => uc.company_id === activeCompanyId)
   const canCreate = activeCompany !== undefined
   const isAdmin = activeCompany?.role === 'admin'
-
-  const fetchPhotos = useCallback(async (showRefreshIndicator = false) => {
-    try {
-      if (showRefreshIndicator) {
-        setIsRefreshing(true)
-      } else {
-        setIsLoading(true)
-      }
-      setError(null)
-
-      const response = await fetch('/api/photos')
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch photos')
-      }
-
-      const data: PhotoListResponse = await response.json()
-      setPhotos(data.data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setIsLoading(false)
-      setIsRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchPhotos()
-  }, [fetchPhotos])
-
-  const handleRefresh = () => {
-    fetchPhotos(true)
-  }
-
-  const handleDeleteClick = (photo: Photo, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setPhotoToDelete(photo)
-    setShowDeleteConfirm(true)
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!photoToDelete) return
-
-    try {
-      setDeletingId(photoToDelete.id)
-      setShowDeleteConfirm(false)
-
-      const response = await fetch(`/api/photos/${photoToDelete.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete photo')
-      }
-
-      setPhotos(prev => prev.filter(p => p.id !== photoToDelete.id))
-      setPhotoToDelete(null)
-    } catch (err) {
-      console.error('Error deleting photo:', err)
-      setError(err instanceof Error ? err.message : 'Failed to delete photo')
-    } finally {
-      setDeletingId(null)
-    }
-  }
-
-  const handleDeleteCancel = () => {
-    setShowDeleteConfirm(false)
-    setPhotoToDelete(null)
-  }
+  const canEdit = activeCompany?.role === 'admin' || activeCompany?.role === 'editor'
 
   const handlePhotoClick = (photo: Photo) => {
     if (onPhotoClick) {
@@ -150,26 +85,6 @@ export function PhotoList({ onCreateClick, onPhotoClick }: PhotoListProps) {
     file_type: 'image/jpeg', // Photos are always images
     description: p.description,
   }))
-
-  const getStatusBadgeVariant = (status: string): 'default' | 'success' | 'warning' | 'danger' | 'info' => {
-    const variants: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-      uploaded: 'default',
-      processing: 'warning',
-      ready: 'success',
-      failed: 'danger',
-    }
-    return variants[status] || 'default'
-  }
-
-  // Generate thumbnail URL with size optimization
-  const getThumbnailUrl = (url: string) => {
-    // Supabase Storage supports image transformations via query params
-    // ?width=200&height=200&resize=cover
-    if (url.includes('supabase')) {
-      return `${url}?width=200&height=200&resize=cover`
-    }
-    return url
-  }
 
   if (isLoading) {
     return (
@@ -216,7 +131,7 @@ export function PhotoList({ onCreateClick, onPhotoClick }: PhotoListProps) {
           </p>
           {canCreate && (
             <Button onClick={onCreateClick}>
-              <Plus className="h-4 w-4 mr-1" />
+              <Image className="h-4 w-4 mr-1" />
               Upload Photo
             </Button>
           )}
@@ -227,134 +142,64 @@ export function PhotoList({ onCreateClick, onPhotoClick }: PhotoListProps) {
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            Photos
-          </h2>
-          <p className="text-sm text-gray-500">
-            {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            isLoading={isRefreshing}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </Button>
-          {canCreate && (
-            <Button size="sm" onClick={onCreateClick}>
-              <Plus className="h-4 w-4 mr-1" />
-              <span className="hidden sm:inline">Upload Photo</span>
-              <span className="sm:hidden">Upload</span>
-            </Button>
-          )}
-        </div>
-      </div>
+      <FileListHeader
+        title="Photos"
+        count={photos.length}
+        viewMode={currentViewMode}
+        onViewModeChange={setCurrentViewMode}
+        onRefresh={handleRefresh}
+        onCreateClick={onCreateClick}
+        isRefreshing={isRefreshing}
+        canCreate={canCreate}
+        createButtonText="Upload Photo"
+      />
 
-      {/* Photo Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-        {photos.map((photo) => (
-          <div
-            key={photo.id}
-            className="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-brand transition-all"
-            onClick={() => handlePhotoClick(photo)}
-          >
-            {/* Thumbnail Image */}
-            <img
-              src={getThumbnailUrl(photo.file_url)}
-              alt={photo.description || 'Photo'}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-
-            {/* Overlay with info */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="absolute bottom-0 left-0 right-0 p-2">
-                <p className="text-xs text-white font-mono truncate">
-                  {photo.display_id}
-                </p>
-              </div>
-            </div>
-
-            {/* Association Badge */}
-            <div className="absolute top-2 left-2">
-              {photo.equipment ? (
-                <Badge variant="default" size="sm" className="bg-white/90 text-gray-700 shadow-sm">
-                  <Wrench className="h-3 w-3 mr-1" />
-                  <span className="truncate max-w-[60px]">{photo.equipment.name}</span>
-                </Badge>
-              ) : photo.work_order ? (
-                <Badge variant="default" size="sm" className="bg-white/90 text-gray-700 shadow-sm">
-                  <ClipboardList className="h-3 w-3 mr-1" />
-                  <span className="truncate max-w-[60px]">WO</span>
-                </Badge>
-              ) : (
-                <Badge variant="default" size="sm" className="bg-white/90 text-gray-700 shadow-sm">
-                  <Building2 className="h-3 w-3 mr-1" />
-                  <span>Company</span>
-                </Badge>
-              )}
-            </div>
-
-            {/* Status Badge */}
-            {photo.status !== 'ready' && (
-              <div className="absolute top-2 right-2">
-                <Badge variant={getStatusBadgeVariant(photo.status)} size="sm">
-                  {photo.status}
-                </Badge>
-              </div>
-            )}
-
-            {/* Delete Button (visible on hover, admin only) */}
-            {isAdmin && (
-              <button
-                onClick={(e) => handleDeleteClick(photo, e)}
-                disabled={deletingId === photo.id}
-                className="absolute bottom-2 right-2 p-1.5 bg-red-600 text-white rounded opacity-0 group-hover:opacity-100 hover:bg-red-700 transition-all disabled:opacity-50"
-                title="Delete photo"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {currentViewMode === 'grid' ? (
+        <FileGridView
+          files={photos}
+          onFileClick={handlePhotoClick}
+          onEditClick={handleEditClick}
+          onDeleteClick={handleDeleteClick}
+          canEdit={canEdit}
+          canDelete={isAdmin}
+          deletingId={deletingId}
+        />
+      ) : (
+        <FileTableView
+          files={photos}
+          fileType="photo"
+          canEdit={canEdit}
+          canDelete={isAdmin}
+          deletingId={deletingId}
+          onEditClick={handleEditClick}
+          onDeleteClick={handleDeleteClick}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && photoToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Delete Photo
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Are you sure you want to delete <span className="font-medium">{photoToDelete.display_id}</span>?
-              This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={handleDeleteCancel}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleDeleteConfirm}
-                isLoading={deletingId === photoToDelete.id}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Photo"
+        itemName={photoToDelete?.display_id || ''}
+        isDeleting={deletingId === photoToDelete?.id}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+
+      {/* Edit Dialog */}
+      <FileEditDialog
+        open={showEditDialog}
+        file={editingPhoto}
+        formData={editFormData}
+        setFormData={setEditFormData}
+        equipment={equipment}
+        workOrders={workOrders}
+        loadingEquipment={loadingEquipment}
+        loadingWorkOrders={loadingWorkOrders}
+        isSaving={isSavingEdit}
+        onCancel={handleEditCancel}
+        onSave={handleEditSave}
+      />
 
       {/* Photo Preview Lightbox */}
       <FilePreview

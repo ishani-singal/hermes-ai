@@ -18,5 +18,5 @@ const VOICE_FORMATTER_PROMPT = `You are a voice-optimized assistant. Convert res
 export const voiceFormatterAgent = new Agent({
   name: 'voiceFormatterAgent',
   instructions: VOICE_FORMATTER_PROMPT,
-  model: 'google/gemini-2.0-flash',
+  model: 'google/gemini-2.5-flash',
 });
