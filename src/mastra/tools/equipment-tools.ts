@@ -247,3 +247,109 @@ export const getEquipmentTool = createTool({
     }
   },
 });
+
+/**
+ * Create Equipment Tool
+ * Creates a new equipment
+ */
+export const createEquipmentTool = createTool({
+  id: 'create-eq-tool',
+  description: 'Create a new equipment record with name, type, manufacturer, and other details.',
+  inputSchema: z.object({
+    name: z.string().describe('Equipment name (required)'),
+    type: z.string().optional().describe('Equipment type (e.g., Pump, Motor, Sensor)'),
+    manufacturer: z.string().optional().describe('Manufacturer name'),
+    model: z.string().optional().describe('Model number/name'),
+    serial_number: z.string().optional().describe('Serial number'),
+    location: z.string().optional().describe('Physical location'),
+    metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata'),
+  }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execute: async ({ context, runtimeContext }: { context?: any; runtimeContext: RuntimeContext }) => {
+    try {
+      const payload = context || {};
+
+      if (!payload.name || typeof payload.name !== 'string' || !payload.name.trim()) {
+        return { ok: false, error: 'Name is required to create equipment' };
+      }
+
+      const BASE_URL = getBaseUrl(runtimeContext);
+      const fetchOptions = createFetchOptions(runtimeContext, 'POST', payload);
+      const res = await fetch(`${BASE_URL}/api/equipment`, fetchOptions);
+
+      const response = await handleApiResponse(res);
+      
+      if (!response.ok) {
+        return response;
+      }
+      
+      const equipment = response.result;
+      const formattedOutput = formatSingleEquipment(equipment);
+      
+      return { 
+        ok: true, 
+        result: {
+          formatted: formattedOutput,
+          raw: equipment,
+        }
+      };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  },
+});
+
+/**
+ * Update Equipment Tool
+ * Updates an existing equipment
+ */
+export const updateEquipmentTool = createTool({
+  id: 'update-eq-tool',
+  description: 'Update an existing equipment by display ID (e.g., EQ-ACME-PUMP-001).',
+  inputSchema: z.object({
+    id: z.string().describe('The equipment display ID (e.g., EQ-ACME-PUMP-001)'),
+    name: z.string().optional().describe('Equipment name'),
+    type: z.string().optional().describe('Equipment type'),
+    manufacturer: z.string().optional().describe('Manufacturer name'),
+    model: z.string().optional().describe('Model number/name'),
+    serial_number: z.string().optional().describe('Serial number'),
+    location: z.string().optional().describe('Physical location'),
+    metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata'),
+  }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execute: async ({ context, runtimeContext }: { context?: any; runtimeContext: RuntimeContext }) => {
+    try {
+      const { id, ...updatePayload } = context || {};
+
+      if (!id) {
+        return { ok: false, error: 'Equipment ID is required' };
+      }
+
+      const BASE_URL = getBaseUrl(runtimeContext);
+      const fetchOptions = createFetchOptions(runtimeContext, 'PATCH', updatePayload);
+      
+      // Use display-id route
+      const endpoint = `${BASE_URL}/api/equipment/display-id/${id}`;
+      const res = await fetch(endpoint, fetchOptions);
+
+      const response = await handleApiResponse(res);
+      
+      if (!response.ok) {
+        return response;
+      }
+      
+      const equipment = response.result;
+      const formattedOutput = formatSingleEquipment(equipment);
+      
+      return { 
+        ok: true, 
+        result: {
+          formatted: formattedOutput,
+          raw: equipment,
+        }
+      };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  },
+});

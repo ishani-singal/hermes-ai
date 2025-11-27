@@ -30,13 +30,27 @@ export async function POST(request: NextRequest) {
     // Use admin client to bypass RLS for signup operations
     const supabase = createServiceRoleClient()
 
-    // Check if company name already exists (trim whitespace)
-    const trimmedCompanyName = companyName.trim()
-    const { data: existingCompany } = await supabase
+    // Check if company name already exists
+    // Normalize: trim and collapse multiple spaces to single space
+    const normalizedCompanyName = companyName.trim().replace(/\s+/g, ' ')
+
+    // Fetch all companies and check for duplicates with normalized comparison
+    const { data: companies, error: companiesError } = await supabase
       .from('companies')
-      .select('id')
-      .ilike('name', trimmedCompanyName)
-      .single()
+      .select('id, name')
+
+    if (companiesError) {
+      console.error('Error fetching companies:', companiesError)
+      return NextResponse.json(
+        { error: 'Failed to verify company uniqueness' },
+        { status: 500 }
+      )
+    }
+
+    // Check if any existing company matches (case-insensitive, whitespace-normalized)
+    const existingCompany = companies?.find(c =>
+      c.name.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedCompanyName.toLowerCase()
+    )
 
     if (existingCompany) {
       return NextResponse.json(
@@ -68,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Generate company_code from company name
     const { data: companyCodeData, error: companyCodeError } = await supabase
-      .rpc('generate_company_code', { p_company_name: trimmedCompanyName })
+      .rpc('generate_company_code', { p_company_name: normalizedCompanyName })
 
     if (companyCodeError) {
       console.error('Company code generation error:', companyCodeError)
@@ -86,7 +100,7 @@ export async function POST(request: NextRequest) {
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
-        name: trimmedCompanyName,
+        name: normalizedCompanyName,
         company_code: companyCode,
         primary_contact_email: email,
       })
@@ -95,10 +109,10 @@ export async function POST(request: NextRequest) {
 
     if (companyError || !company) {
       console.error('Company creation error:', companyError)
-      
+
       // Cleanup: Delete auth user if company creation fails
       await supabase.auth.admin.deleteUser(userId)
-      
+
       return NextResponse.json(
         { error: 'Failed to create company' },
         { status: 500 }
@@ -127,17 +141,17 @@ export async function POST(request: NextRequest) {
         // Wait 200ms before retrying
         await new Promise(resolve => setTimeout(resolve, 200))
       }
-      
+
       attempts++
     }
 
     if (!user) {
       console.error('User record not found after signup')
-      
+
       // Cleanup
       await supabase.auth.admin.deleteUser(userId)
       await supabase.from('companies').delete().eq('id', company.id)
-      
+
       return NextResponse.json(
         { error: 'Failed to create user profile' },
         { status: 500 }
@@ -156,11 +170,11 @@ export async function POST(request: NextRequest) {
 
     if (userCompanyError) {
       console.error('User-company relationship error:', userCompanyError)
-      
+
       // Cleanup
       await supabase.auth.admin.deleteUser(userId)
       await supabase.from('companies').delete().eq('id', company.id)
-      
+
       return NextResponse.json(
         { error: 'Failed to link user to company' },
         { status: 500 }

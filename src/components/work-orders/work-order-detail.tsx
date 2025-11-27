@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { FileUploadForm } from '@/components/common/file-upload-form'
-import { WorkOrder, WorkOrderStatus, WorkOrderPriority, UpdateWorkOrderRequest } from '@/types'
+import { WorkOrder, WorkOrderStatus, WorkOrderPriority, UpdateWorkOrderRequest, Equipment } from '@/types'
 import { useAuth } from '@/lib/auth/context'
 import { localDateToUTC, utcToLocalDateString } from '@/lib/utils/date-timezone'
 import { Clock, Paperclip } from 'lucide-react'
@@ -48,7 +48,9 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
-  
+  const [equipmentList, setEquipmentList] = useState<Equipment[]>([])
+  const [isLoadingEquipment, setIsLoadingEquipment] = useState(false)
+
   // Initialize with defaults so inputs are controlled from first render
   const [formData, setFormData] = useState<UpdateWorkOrderRequest>({
     title: '',
@@ -61,6 +63,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   })
 
   // Fetch users when component mounts (for the dropdown)
+  // Fetch users and equipment
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -81,10 +84,28 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
       }
     }
 
-    if (isAdmin) {
-      fetchUsers()
+    const fetchEquipment = async () => {
+      try {
+        setIsLoadingEquipment(true)
+        const response = await fetch('/api/equipment')
+        if (response.ok) {
+          const data = await response.json()
+          setEquipmentList(data.data || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch equipment:', err)
+      } finally {
+        setIsLoadingEquipment(false)
+      }
     }
-  }, [isAdmin])
+
+    if (open) {
+      fetchEquipment()
+      if (isAdmin) {
+        fetchUsers()
+      }
+    }
+  }, [open, isAdmin])
 
   // Reset form when work order changes
   useEffect(() => {
@@ -102,7 +123,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
       setIsEditing(false)
       setError(null)
       setShowAttachments(false)
-      
+
       // Load attachments
       loadAttachments();
     }
@@ -110,15 +131,15 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
   const loadAttachments = async () => {
     if (!workOrder) return;
-    
+
     setIsLoadingAttachments(true);
     try {
       const photosRes = await fetch(`/api/photos?work_order_id=${workOrder.id}`);
       const docsRes = await fetch(`/api/documents?work_order_id=${workOrder.id}`);
-      
+
       const photos = photosRes.ok ? (await photosRes.json()).data : [];
       const docs = docsRes.ok ? (await docsRes.json()).data : [];
-      
+
       setAttachments([...photos, ...docs]);
     } catch (err) {
       console.error('Failed to load attachments:', err);
@@ -131,7 +152,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
   // Both admin and regular users (editor/viewer) can view and edit work orders
   const canEdit = activeCompany !== undefined
-  
+
   // Admin can edit all fields, others can only edit description and status
   const canEditField = (field: string): boolean => {
     if (isAdmin) return true
@@ -140,14 +161,14 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    
+
     setIsSubmitting(true)
     setError(null)
 
     try {
       // Build update payload based on permissions
       const updateData: UpdateWorkOrderRequest = {}
-      
+
       if (canEditField('title') && formData.title !== workOrder.title) {
         updateData.title = formData.title
       }
@@ -222,7 +243,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
 
   const handleDelete = async () => {
     if (!workOrder) return
-    
+
     setIsDeleting(true)
     setError(null)
 
@@ -301,7 +322,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
                   </span>
                 </div>
               )}
-              
+
               {/* Attachments Summary */}
               <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -320,217 +341,223 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
             </div>
           )}
 
-        <Input
-          label="Title"
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          disabled={!isEditing || !canEditField('title')}
-          maxLength={255}
-        />
-
-        <Textarea
-          label="Description"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          disabled={!isEditing || !canEditField('description')}
-          rows={4}
-          maxLength={5000}
-        />
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Select
-            label="Status"
-            options={statusOptions}
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value as WorkOrderStatus })}
-            disabled={!isEditing || !canEditField('status')}
+          <Input
+            label="Title"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            disabled={!isEditing || !canEditField('title')}
+            maxLength={255}
           />
 
-          <Select
-            label="Priority"
-            options={priorityOptions}
-            value={formData.priority}
-            onChange={(e) => setFormData({ ...formData, priority: e.target.value as WorkOrderPriority })}
-            disabled={!isEditing || !canEditField('priority')}
+          <Textarea
+            label="Description"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            disabled={!isEditing || !canEditField('description')}
+            rows={4}
+            maxLength={5000}
           />
-        </div>
 
-        <Input
-          label="Due Date"
-          type="date"
-          value={formData.due_date}
-          onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-          disabled={!isEditing || !canEditField('due_date')}
-        />
-
-        {/* Equipment Display - Show name/display_id when not editing, allow GUID input when editing */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Equipment
-          </label>
-          {isEditing ? (
-            <Input
-              value={formData.equipment_id}
-              onChange={(e) => setFormData({ ...formData, equipment_id: e.target.value })}
-              disabled={!canEditField('equipment_id')}
-              placeholder="Equipment ID (GUID or display ID)"
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              label="Status"
+              options={statusOptions}
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value as WorkOrderStatus })}
+              disabled={!isEditing || !canEditField('status')}
             />
-          ) : (
-            <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
-              {workOrder.equipment ? (
-                <>
-                  <span className="font-medium">{workOrder.equipment.name}</span>
-                  <span className="text-gray-500 ml-2">({workOrder.equipment.display_id})</span>
-                </>
-              ) : (
-                <span className="text-gray-400">No equipment assigned</span>
-              )}
-            </div>
-          )}
-        </div>
 
-        {isAdmin && (
+            <Select
+              label="Priority"
+              options={priorityOptions}
+              value={formData.priority}
+              onChange={(e) => setFormData({ ...formData, priority: e.target.value as WorkOrderPriority })}
+              disabled={!isEditing || !canEditField('priority')}
+            />
+          </div>
+
+          <Input
+            label="Due Date"
+            type="date"
+            value={formData.due_date}
+            onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+            disabled={!isEditing || !canEditField('due_date')}
+          />
+
+          {/* Equipment Display - Show name/display_id when not editing, allow GUID input when editing */}
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Equipment
+            </label>
             {isEditing ? (
               <Select
-                label="Assigned To"
                 options={[
-                  { value: '', label: 'Unassigned' },
-                  ...users.map(user => ({ value: user.id, label: user.label }))
+                  { value: '', label: 'None - No equipment' },
+                  ...equipmentList.map(eq => ({
+                    value: eq.id,
+                    label: `${eq.display_id} - ${eq.name}`
+                  }))
                 ]}
-                value={formData.assigned_to}
-                onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-                disabled={!isEditing || !canEditField('assigned_to') || isLoadingUsers}
+                value={formData.equipment_id}
+                onChange={(e) => setFormData({ ...formData, equipment_id: e.target.value })}
+                disabled={!canEditField('equipment_id') || isLoadingEquipment}
               />
             ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assigned To
-                </label>
-                <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
-                  {workOrder.assigned_to_user ? (
-                    <>
-                      <span className="font-medium">{workOrder.assigned_to_user.full_name}</span>
-                      <span className="text-gray-500 ml-1">({workOrder.assigned_to_user.email})</span>
-                    </>
-                  ) : (
-                    <span className="text-gray-400">Unassigned</span>
-                  )}
-                </div>
+              <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
+                {workOrder.equipment ? (
+                  <>
+                    <span className="font-medium">{workOrder.equipment.name}</span>
+                    <span className="text-gray-500 ml-2">({workOrder.equipment.display_id})</span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">No equipment assigned</span>
+                )}
               </div>
             )}
           </div>
-        )}
 
-        {/* Permission notice for users */}
-        {!isAdmin && isEditing && (
-          <div className="p-3 bg-brand/10 border border-brand rounded-md">
-            <p className="text-xs text-brand-dark">
-              ℹ️ As a user, you can only edit the description and status fields. 
-              Contact an admin to modify other fields.
-            </p>
-          </div>
-        )}
-
-        {/* Action Buttons (when editing: submit buttons stay inside the form) */}
-        {isEditing && (
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              isLoading={isSubmitting}
-              disabled={isSubmitting}
-            >
-              Save Changes
-            </Button>
-          </div>
-        )}
-
-        {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
-        {!isEditing && !showDeleteConfirm && (
-          <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
+          {isAdmin && (
             <div>
-              {isAdmin && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="text-red-600 hover:text-red-700 hover:border-red-300"
-                >
-                  Delete
-                </Button>
+              {isEditing ? (
+                <Select
+                  label="Assigned To"
+                  options={[
+                    { value: '', label: 'Unassigned' },
+                    ...users.map(user => ({ value: user.id, label: user.label }))
+                  ]}
+                  value={formData.assigned_to}
+                  onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+                  disabled={!isEditing || !canEditField('assigned_to') || isLoadingUsers}
+                />
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assigned To
+                  </label>
+                  <div className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm text-gray-900">
+                    {workOrder.assigned_to_user ? (
+                      <>
+                        <span className="font-medium">{workOrder.assigned_to_user.full_name}</span>
+                        <span className="text-gray-500 ml-1">({workOrder.assigned_to_user.email})</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400">Unassigned</span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-            <div className="flex gap-3">
+          )}
+
+          {/* Permission notice for users */}
+          {!isAdmin && isEditing && (
+            <div className="p-3 bg-brand/10 border border-brand rounded-md">
+              <p className="text-xs text-brand-dark">
+                ℹ️ As a user, you can only edit the description and status fields.
+                Contact an admin to modify other fields.
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons (when editing: submit buttons stay inside the form) */}
+          {isEditing && (
+            <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={handleCancel}
+                disabled={isSubmitting}
               >
-                Close
+                Cancel
               </Button>
-              {canEdit && (
+              <Button
+                type="submit"
+                isLoading={isSubmitting}
+                disabled={isSubmitting}
+              >
+                Save Changes
+              </Button>
+            </div>
+          )}
+
+          {/* Non-editing action buttons (moved outside the form to avoid accidental submits) */}
+          {!isEditing && !showDeleteConfirm && (
+            <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
+              <div>
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-red-600 hover:text-red-700 hover:border-red-300"
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-3">
                 <Button
                   type="button"
-                  onClick={() => setIsEditing(true)}
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
                 >
-                  Edit
+                  Close
                 </Button>
-              )}
+                {canEdit && (
+                  <Button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    Edit
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Delete Confirmation */}
-        {!isEditing && showDeleteConfirm && (
-        <div className="pt-4 border-t border-gray-200">
-          <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
-            <h4 className="font-semibold text-red-900 mb-2">Delete Work Order?</h4>
-            <p className="text-sm text-red-800 mb-1">
-              Are you sure you want to delete this work order?
-            </p>
-            <p className="text-sm text-red-700">
-              <strong>Display ID:</strong> {workOrder.display_id}
-            </p>
-            <p className="text-sm text-red-700">
-              <strong>Title:</strong> {workOrder.title}
-            </p>
-            <p className="text-sm text-red-800 mt-2 font-medium">
-              This action cannot be undone.
-            </p>
-          </div>
-          <div className="flex gap-3 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setShowDeleteConfirm(false)
-                setError(null)
-              }}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleDelete}
-              isLoading={isDeleting}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              Delete Work Order
-            </Button>
-          </div>
-        </div>
-        )}
-      </form>
+          {/* Delete Confirmation */}
+          {!isEditing && showDeleteConfirm && (
+            <div className="pt-4 border-t border-gray-200">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
+                <h4 className="font-semibold text-red-900 mb-2">Delete Work Order?</h4>
+                <p className="text-sm text-red-800 mb-1">
+                  Are you sure you want to delete this work order?
+                </p>
+                <p className="text-sm text-red-700">
+                  <strong>Display ID:</strong> {workOrder.display_id}
+                </p>
+                <p className="text-sm text-red-700">
+                  <strong>Title:</strong> {workOrder.title}
+                </p>
+                <p className="text-sm text-red-800 mt-2 font-medium">
+                  This action cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setError(null)
+                  }}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDelete}
+                  isLoading={isDeleting}
+                  disabled={isDeleting}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Delete Work Order
+                </Button>
+              </div>
+            </div>
+          )}
+        </form>
       ) : (
         /* Attachments View */
         <div className="space-y-4">
@@ -555,15 +582,15 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {attachments.map((att) => (
                 <div key={att.id} className="border border-gray-200 rounded-lg p-3 hover:border-brand transition-colors">
-                  <a 
-                    href={att.file_url} 
-                    target="_blank" 
+                  <a
+                    href={att.file_url}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-start gap-3"
                   >
                     {att.file_type.startsWith('image/') ? (
-                      <img 
-                        src={att.file_url} 
+                      <img
+                        src={att.file_url}
                         alt={att.file_name}
                         className="w-16 h-16 object-cover rounded"
                       />

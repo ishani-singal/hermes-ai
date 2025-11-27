@@ -28,15 +28,29 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceRoleClient()
 
-    // Step 1: Check if company exists (trim whitespace)
-    const trimmedCompanyName = companyName.trim()
-    const { data: company, error: companyError } = await supabase
+    // Step 1: Check if company exists
+    // Normalize: trim and collapse multiple spaces to single space
+    const normalizedCompanyName = companyName.trim().replace(/\s+/g, ' ')
+
+    // Fetch all companies and do case-insensitive + whitespace-normalized matching
+    const { data: companies, error: companiesError } = await supabase
       .from('companies')
       .select('*')
-      .ilike('name', trimmedCompanyName)
-      .single()
 
-    if (companyError || !company) {
+    if (companiesError) {
+      console.error('Error fetching companies:', companiesError)
+      return NextResponse.json(
+        { error: 'Failed to verify company' },
+        { status: 500 }
+      )
+    }
+
+    // Find matching company with normalized comparison
+    const company = companies?.find(c =>
+      c.name.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedCompanyName.toLowerCase()
+    )
+
+    if (!company) {
       return NextResponse.json(
         { error: 'Company not found. Please check the spelling or check "Create new company" to create it.' },
         { status: 404 }
@@ -84,16 +98,16 @@ export async function POST(request: NextRequest) {
       if (attempts < maxAttempts - 1) {
         await new Promise(resolve => setTimeout(resolve, 200))
       }
-      
+
       attempts++
     }
 
     if (!user) {
       console.error('User record not found after signup')
-      
+
       // Cleanup
       await supabase.auth.admin.deleteUser(userId)
-      
+
       return NextResponse.json(
         { error: 'Failed to create user profile' },
         { status: 500 }
@@ -112,10 +126,10 @@ export async function POST(request: NextRequest) {
 
     if (userCompanyError) {
       console.error('User-company relationship error:', userCompanyError)
-      
+
       // Cleanup
       await supabase.auth.admin.deleteUser(userId)
-      
+
       return NextResponse.json(
         { error: 'Failed to add user to company' },
         { status: 500 }

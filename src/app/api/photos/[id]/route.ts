@@ -45,7 +45,7 @@ export const PATCH = route()
       work_order_id?: string | null;
       link_type?: string;
     };
-    
+
     try {
       body = await request.json();
     } catch {
@@ -53,7 +53,8 @@ export const PATCH = route()
     }
 
     // Fetch existing photo
-    const { data: photo, error: fetchError } = await supabase
+    // Try UUID first, then display_id
+    let query = supabase
       .from('files')
       .select(`
         id, 
@@ -70,9 +71,19 @@ export const PATCH = route()
         )
       `)
       .eq('company_id', user!.companyId)
-      .eq('bucket_id', 'photos')
-      .or(`id.eq.${photoId},metadata->>display_id.eq.${photoId}`)
-      .maybeSingle();
+      .eq('bucket_id', 'photos');
+
+    // Check if photoId is a UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(photoId);
+
+    if (isUUID) {
+      query = query.eq('id', photoId);
+    } else {
+      // It's a display_id, query the JSONB field
+      query = query.eq('metadata->>display_id', photoId);
+    }
+
+    const { data: photo, error: fetchError } = await query.maybeSingle();
 
     if (fetchError || !photo) {
       return notFound('Photo not found or does not belong to your company');
@@ -117,12 +128,22 @@ export const PATCH = route()
       // Add new equipment link if provided
       if (body.equipment_id) {
         // Validate equipment exists and belongs to company
-        const { data: equipment, error: equipmentError } = await supabase
+        let equipmentQuery = supabase
           .from('equipment')
           .select('id, name')
-          .eq('company_id', user!.companyId)
-          .or(`id.eq.${body.equipment_id},display_id.eq.${body.equipment_id}`)
-          .maybeSingle();
+          .eq('company_id', user!.companyId);
+
+        // Check if equipment_id is a UUID
+        const isEquipmentUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.equipment_id);
+
+        if (isEquipmentUUID) {
+          equipmentQuery = equipmentQuery.eq('id', body.equipment_id);
+        } else {
+          // It's a display_id
+          equipmentQuery = equipmentQuery.eq('display_id', body.equipment_id);
+        }
+
+        const { data: equipment, error: equipmentError } = await equipmentQuery.maybeSingle();
 
         if (equipmentError || !equipment) {
           return badRequest('Equipment not found or does not belong to your company');
@@ -156,12 +177,22 @@ export const PATCH = route()
       // Add new work order link if provided
       if (body.work_order_id) {
         // Validate work order exists and belongs to company
-        const { data: workOrder, error: workOrderError } = await supabase
+        let workOrderQuery = supabase
           .from('work_orders')
           .select('id, title')
-          .eq('company_id', user!.companyId)
-          .or(`id.eq.${body.work_order_id},display_id.eq.${body.work_order_id}`)
-          .maybeSingle();
+          .eq('company_id', user!.companyId);
+
+        // Check if work_order_id is a UUID
+        const isWorkOrderUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.work_order_id);
+
+        if (isWorkOrderUUID) {
+          workOrderQuery = workOrderQuery.eq('id', body.work_order_id);
+        } else {
+          // It's a display_id
+          workOrderQuery = workOrderQuery.eq('display_id', body.work_order_id);
+        }
+
+        const { data: workOrder, error: workOrderError } = await workOrderQuery.maybeSingle();
 
         if (workOrderError || !workOrder) {
           return badRequest('Work order not found or does not belong to your company');
@@ -226,7 +257,7 @@ export const PATCH = route()
           // Check if photo is already indexed (status='ready') or still in delay period
           const isAlreadyIndexed = photo.processing_status === 'ready';
           const jobId = `photo-${photo.id}`;
-          
+
           if (isAlreadyIndexed) {
             // File already indexed - queue immediate re-index with updated metadata
             await contentQueue.add(indexParams, jobId); // No delay
@@ -237,7 +268,7 @@ export const PATCH = route()
             await contentQueue.add(indexParams, jobId, RAG_INDEX_DELAY_MS);
             console.log('[PhotoUpdate] Photo re-queued with updated metadata (delay reset)');
           }
-          
+
           // Update metadata to track last update
           await supabase
             .from('files')
@@ -255,7 +286,7 @@ export const PATCH = route()
       }
     }
 
-    return success({ 
+    return success({
       message: 'Photo updated successfully',
       needsReindex,
     });
@@ -283,13 +314,23 @@ export const DELETE = route()
     const supabase = createServiceRoleClient();
 
     // Fetch existing photo to get storage path
-    const { data: photo, error: fetchError } = await supabase
+    let query = supabase
       .from('files')
       .select('id, storage_path, company_id')
       .eq('company_id', user!.companyId)
-      .eq('bucket_id', 'photos')
-      .or(`id.eq.${photoId},metadata->>display_id.eq.${photoId}`)
-      .maybeSingle();
+      .eq('bucket_id', 'photos');
+
+    // Check if photoId is a UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(photoId);
+
+    if (isUUID) {
+      query = query.eq('id', photoId);
+    } else {
+      // It's a display_id, query the JSONB field
+      query = query.eq('metadata->>display_id', photoId);
+    }
+
+    const { data: photo, error: fetchError } = await query.maybeSingle();
 
     if (fetchError || !photo) {
       return notFound('Photo not found or does not belong to your company');
