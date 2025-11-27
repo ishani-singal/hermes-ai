@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { Dispatch, SetStateAction } from 'react'
 import { DataHubFile, EquipmentOption, WorkOrderOption } from '../types'
 import { ResourceSelectors } from './resource-selectors'
 
@@ -11,7 +12,12 @@ interface FileEditDialogProps {
         equipmentId: string
         workOrderId: string
     }
-    setFormData: (data: any) => void
+    setFormData: Dispatch<SetStateAction<{
+        title: string
+        description: string
+        equipmentId: string
+        workOrderId: string
+    }>>
     equipment: EquipmentOption[]
     workOrders: WorkOrderOption[]
     loadingEquipment: boolean

@@ -47,7 +47,7 @@ export function useFileUpload({ endpoint, onSuccess, maxSize = 10 * 1024 * 1024,
         }
     }, [maxSize, acceptedTypes])
 
-    const uploadFile = async (additionalData: Record<string, any>) => {
+    const uploadFile = async (additionalData?: Record<string, unknown>) => {
         if (!file) {
             setError('No file selected')
             return
@@ -62,9 +62,14 @@ export function useFileUpload({ endpoint, onSuccess, maxSize = 10 * 1024 * 1024,
             formData.append('file', file)
 
             // Append additional data
-            Object.entries(additionalData).forEach(([key, value]) => {
+            Object.entries(additionalData || {}).forEach(([key, value]) => {
                 if (value !== undefined && value !== null && value !== '') {
-                    formData.append(key, value)
+                    // formData.append expects string or Blob; coerce otherwise
+                    if (value instanceof Blob) {
+                        formData.append(key, value)
+                    } else {
+                        formData.append(key, String(value))
+                    }
                 }
             })
 
