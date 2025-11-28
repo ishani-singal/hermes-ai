@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Mic, Radio, StopCircle, Plus, Camera, Image, FileText } from 'lucide-react'
+import { Send, Mic, StopCircle, Plus, Camera, Image as ImageIcon, FileText, Radio } from 'lucide-react'
 import { CameraModal } from '@/components/ui/camera-modal'
+import { LanguageSelector } from '@/components/voice/LanguageSelector'
+import { LanguageOption } from '@/lib/voice/types'
 
 type ChatInputProps = {
   input: string
@@ -11,14 +13,17 @@ type ChatInputProps = {
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   listening: boolean
   onMicClick: () => void
-  onStreamClick: () => void
+  onTurnByTurnClick?: () => void
   loading: boolean
   streamMode: boolean
   pushToTalkMode: boolean
-  isTTSPlaying: boolean
-  onStopTTS: () => void
+  turnByTurnMode?: boolean
+  isTTSPlaying?: boolean
+  onStopTTS?: () => void
   onPhotoSelect?: (file: File) => void
   onDocumentSelect?: (file: File) => void
+  selectedLanguage?: LanguageOption
+  onLanguageChange?: (language: LanguageOption) => void
 }
 
 export function ChatInput({
@@ -28,14 +33,17 @@ export function ChatInput({
   onKeyDown,
   listening,
   onMicClick,
-  onStreamClick,
+  onTurnByTurnClick,
   loading,
   streamMode,
   pushToTalkMode,
+  turnByTurnMode = false,
   isTTSPlaying,
   onStopTTS,
   onPhotoSelect,
   onDocumentSelect,
+  selectedLanguage,
+  onLanguageChange,
 }: ChatInputProps) {
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [showCameraModal, setShowCameraModal] = useState(false)
@@ -61,9 +69,9 @@ export function ChatInput({
     }
     void checkCamera()
   }, [])
-  
+
   const placeholderText = listening ? 'You can start talking now' : 'Type your question here'
-  
+
   // Disable send button when:
   // 1. Loading (awaiting response)
   // 2. In stream mode (auto-send is enabled)
@@ -132,12 +140,12 @@ export function ChatInput({
           >
             <Plus className="h-5 w-5" />
           </button>
-          
+
           {/* Attachment menu */}
           {showAttachMenu && (
             <>
-              <div 
-                className="fixed inset-0 z-10" 
+              <div
+                className="fixed inset-0 z-10"
                 onClick={() => setShowAttachMenu(false)}
               />
               <div className="absolute bottom-full left-0 mb-2 bg-white rounded-md shadow-lg border border-gray-200 py-1 min-w-[180px] z-20">
@@ -146,8 +154,8 @@ export function ChatInput({
                   disabled={hasCameraDevice === false}
                   className={
                     "w-full px-4 py-2 text-left text-sm flex items-center gap-3 " +
-                    (hasCameraDevice === false 
-                      ? "text-gray-400 cursor-not-allowed" 
+                    (hasCameraDevice === false
+                      ? "text-gray-400 cursor-not-allowed"
                       : "text-gray-700 hover:bg-gray-50")
                   }
                   title={hasCameraDevice === false ? "No camera detected" : "Take a photo"}
@@ -159,7 +167,7 @@ export function ChatInput({
                   onClick={handleUploadPhotoClick}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                 >
-                  <Image className="h-4 w-4" />
+                  <ImageIcon className="h-4 w-4" />
                   Upload Photo
                 </button>
                 <button
@@ -172,7 +180,7 @@ export function ChatInput({
               </div>
             </>
           )}
-          
+
           {/* Hidden file inputs */}
           <input
             ref={photoInputRef}
@@ -192,8 +200,8 @@ export function ChatInput({
           />
         </div>
 
-        <CameraModal 
-          open={showCameraModal} 
+        <CameraModal
+          open={showCameraModal}
           onOpenChange={setShowCameraModal}
           onCapture={handleCameraCapture}
         />
@@ -213,18 +221,9 @@ export function ChatInput({
           }}
           aria-label="Chat message"
         />
-        
+
         {/* Action buttons - all same height */}
         <div className="flex items-stretch gap-2">
-          {isTTSPlaying && (
-            <button
-              onClick={onStopTTS}
-              title="Stop audio playback"
-              className="inline-flex items-center justify-center w-[46px] h-[46px] rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors animate-pulse"
-            >
-              <StopCircle className="h-5 w-5" />
-            </button>
-          )}
           <button
             onClick={onSend}
             disabled={isSendDisabled}
@@ -245,20 +244,33 @@ export function ChatInput({
               <Mic className="h-5 w-5" />
             </span>
           </button>
-          <button
-            onClick={onStreamClick}
-            title={streamMode && listening ? 'Stop continuous conversation' : 'Start continuous conversation'}
-            className={
-              'inline-flex items-center justify-center w-[46px] h-[46px] rounded-md transition-colors ' +
-              (streamMode && listening
-                ? 'bg-purple-600 text-white border-2 border-purple-700 shadow-lg shadow-purple-500/50'
-                : 'bg-purple-100 text-purple-700 border-2 border-purple-300 hover:bg-purple-200')
-            }
-          >
-            <span className={streamMode && listening ? 'animate-pulse' : ''}>
-              <Radio className="h-5 w-5" />
-            </span>
-          </button>
+          {onTurnByTurnClick && (
+            <button
+              onClick={onTurnByTurnClick}
+              title={listening || loading || isTTSPlaying ? 'Stop conversation' : 'Start turn-by-turn conversation'}
+              className={
+                'inline-flex items-center justify-center w-[46px] h-[46px] rounded-md transition-colors ' +
+                (listening || loading || isTTSPlaying
+                  ? 'bg-red-600 text-white border-2 border-red-700 shadow-lg shadow-red-500/50'
+                  : 'bg-green-100 text-green-700 border-2 border-green-300 hover:bg-green-200')
+              }
+            >
+              <span className={listening || loading || isTTSPlaying ? 'animate-pulse' : ''}>
+                {listening || loading || isTTSPlaying ? (
+                  <StopCircle className="h-5 w-5" />
+                ) : (
+                  <Radio className="h-5 w-5" />
+                )}
+              </span>
+            </button>
+          )}
+          {onLanguageChange && (
+            <LanguageSelector
+              value={selectedLanguage?.code}
+              onChange={onLanguageChange}
+              className="ml-2"
+            />
+          )}
         </div>
       </div>
     </div>

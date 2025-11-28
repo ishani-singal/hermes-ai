@@ -5,7 +5,7 @@ import { assistantWorkflow } from './workflows/assistant-workflow';
 import { postgres } from './storage';
 
 export const mastra = new Mastra({
-  agents: { 
+  agents: {
     technicianAgent,
     voiceFormatterAgent,
   },

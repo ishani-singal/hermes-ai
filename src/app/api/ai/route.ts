@@ -12,9 +12,9 @@ export const POST = route()
       const { user } = context;
 
       const body = await request.json();
-      const { message, threadId, streamMode = false } = body;
+      const { message, threadId, streamMode = false, language } = body;
 
-      console.log('[AI] Received request:', { userId: user?.id, streamMode, messageLength: message?.length });
+      console.log('[AI] Received request:', { userId: user?.id, streamMode, language, messageLength: message?.length });
 
       if (!message || typeof message !== 'string') {
         console.warn('[AI] Invalid message in request');
@@ -30,23 +30,24 @@ export const POST = route()
       runtimeContext.set('user', user);
       runtimeContext.set('cookie', request.headers.get('cookie') || '');
       runtimeContext.set('baseUrl', baseUrl);
-      
+
       // Set company ID for RAG operations
       if (user?.companyId) {
         runtimeContext.set('companyId', user.companyId);
-      } 
+      }
 
       const conversationThreadId = threadId || `thread_${user?.id}_${Date.now()}`;
 
       const workflow = mastra.getWorkflow('assistantWorkflow');
       const run = await workflow.createRunAsync();
-      
-      console.log('[AI] Starting workflow:', { mode, threadId: conversationThreadId });
-      
+
+      console.log('[AI] Starting workflow:', { mode, language, threadId: conversationThreadId });
+
       const result = await run.start({
         inputData: {
           message,
           mode,
+          language,  // Pass language to workflow
           threadId: conversationThreadId,
           resourceId: user?.id,
         },
@@ -57,11 +58,11 @@ export const POST = route()
         console.error('[AI] Workflow failed:', { status: result.status, result });
         return badRequest('Workflow execution failed');
       }
-      
+
       const hasAudio = !!result.result.audioBase64;
       console.log('[AI] Workflow succeeded:', { mode, hasAudio, textLength: result.result.text?.length });
-      
-      return success({ 
+
+      return success({
         assistant: {
           text: result.result.text,
           audioBase64: result.result.audioBase64,

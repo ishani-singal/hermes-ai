@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { useVoice } from '@/hooks/useVoice'
+import { useTurnByTurn } from '@/hooks/useTurnByTurn'
 import { ChatMessages } from './chat-messages'
 import { ChatInput } from './chat-input'
+import { SilenceDetector } from '@/components/voice/SilenceDetector'
 import { X, Loader2, FileText } from 'lucide-react'
 
 export type Message = {
@@ -54,67 +55,74 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const [photos, setPhotos] = useState<PhotoAttachment[]>([])
   const [documents, setDocuments] = useState<DocumentAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement | null>(null)
-  const { start, stop, listening, partial, lastFinal, error: voiceError, resetFinal } = useVoice({ lang: 'en-US' })
-  const processingRef = useRef(false)
-  const lastSentRef = useRef<{ text: string; time: number } | null>(null)
-  const [streamMode, setStreamMode] = useState(false)
-  const [pushToTalkMode, setPushToTalkMode] = useState(false)
-  const [isTTSPlaying, setIsTTSPlaying] = useState(false)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const audioUnlockedRef = useRef(false)
-  const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null)
 
-  // populate input from voice partials/final
-  useEffect(() => {
-    if (listening && partial && !processingRef.current) {
-      setInput(partial)
-    }
-  }, [partial, listening])
-
-  useEffect(() => {
-    if (lastFinal && lastFinal.trim().length > 0 && !processingRef.current) {
-      const text = lastFinal.trim()
-      const now = Date.now()
-
-      if (lastSentRef.current && lastSentRef.current.text === text && now - lastSentRef.current.time < 2000) {
-        resetFinal()
-        return
+  // Turn-by-turn voice hook
+  const {
+    state: voiceState,
+    error: voiceError,
+    startRecording,
+    stopRecording,
+    stopAudio,
+    stopAll,  // New: stop everything
+    isRecording,
+    isProcessing,
+    isSpeaking,
+    stream,
+    selectedLanguage,
+    setSelectedLanguage
+  } = useTurnByTurn({
+    onTranscribing: () => {
+      // Add temporary "Transcribing..." message (right side - user)
+      const transcribingMessage: Message = {
+        id: 'transcribing-' + String(Date.now()),
+        role: 'user',
+        text: 'Transcribing...',
       }
+      setMessages((m) => [...m, transcribingMessage])
+    },
+    onTranscript: (text) => {
+      // Remove transcribing message and add actual user message
+      setMessages((m) => {
+        const filtered = m.filter(msg => !msg.id.startsWith('transcribing-'))
+        return [...filtered, {
+          id: String(Date.now()) + Math.random().toString(16).slice(2),
+          role: 'user',
+          text,
+        }]
+      })
 
-      if (!streamMode) {
-        if (pushToTalkMode) {
-          processingRef.current = true
-          ;(async () => {
-            try {
-              await stop()
-              resetFinal()
-            } finally {
-              processingRef.current = false
-            }
-          })()
-        }
-        return
+      // Add "Thinking..." message (left side - assistant)
+      const thinkingMessage: Message = {
+        id: 'thinking-' + String(Date.now()),
+        role: 'assistant',
+        text: 'Thinking...',
       }
+      setMessages((m) => [...m, thinkingMessage])
+    },
+    onResponse: (text) => {
+      // Remove thinking message and add actual assistant message
+      setMessages((m) => {
+        const filtered = m.filter(msg => !msg.id.startsWith('thinking-'))
+        return [...filtered, {
+          id: 'a-' + String(Date.now()) + Math.random().toString(16).slice(2),
+          role: 'assistant',
+          text,
+        }]
+      })
+    },
+    onError: (err) => {
+      // Remove any temporary messages on error
+      setMessages((m) => m.filter(msg => !msg.id.startsWith('transcribing-') && !msg.id.startsWith('thinking-')))
+      setError(err)
+    },
+    autoContinue: true,
+    threadId: threadId
+  })
 
-      processingRef.current = true
-      ;(async () => {
-        try {
-          await stop()
-          await send(text)
-          setInput('')
-          lastSentRef.current = { text, time: Date.now() }
-          resetFinal()
-          
-          setTimeout(() => {
-            void start()
-          }, 500)
-        } finally {
-          processingRef.current = false
-        }
-      })()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastFinal, stop, streamMode, start])
+  // Effect to scroll to bottom
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading, voiceState])
 
   useEffect(() => {
     if (voiceError) {
@@ -134,10 +142,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
 
   const send = async (text?: string) => {
     const messageText = (text ?? input).trim()
@@ -160,10 +164,9 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           message: messageText,
           threadId: threadId || undefined,
-          streamMode: streamMode, // Send streamMode flag to backend
         }),
       })
 
@@ -181,7 +184,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       const assistantText =
         json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
-      const audioBase64 = json?.assistant?.audioBase64 ?? json?.data?.assistant?.audioBase64
 
       const assistantMessage: Message = {
         id: 'a-' + String(Date.now()) + Math.random().toString(16).slice(2),
@@ -191,30 +193,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       setMessages((m) => [...m, assistantMessage])
 
-      if (audioBase64 && streamMode) {
-        try {
-          await stop()
-          
-          const audioBlob = base64ToBlob(audioBase64, 'audio/mpeg')
-          await playAudioBlob(audioBlob)
-          
-          setTimeout(() => {
-            if (streamMode) {
-              void start()
-            }
-          }, 500)
-        } catch (audioErr) {
-          const isUserStop = audioErr instanceof Error && audioErr.message === 'Audio stopped by user'
-          
-          if (!isUserStop && streamMode) {
-            setTimeout(() => {
-              if (streamMode) {
-                void start()
-              }
-            }, 500)
-          }
-        }
-      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
       setMessages((m) => [
@@ -229,70 +207,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       setLoading(false)
     }
   }
-  const base64ToBlob = (base64: string, mimeType: string): Blob => {
-    const byteCharacters = atob(base64)
-    const byteNumbers = new Array(byteCharacters.length)
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i)
-    }
-    const byteArray = new Uint8Array(byteNumbers)
-    return new Blob([byteArray], { type: mimeType })
-  }
-
-  const playAudioBlob = async (blob: Blob): Promise<void> => {
-    if (!audioUnlockedRef.current || !audioContextRef.current) {
-      throw new Error('Audio not unlocked')
-    }
-
-    return new Promise((resolve, reject) => {
-      setIsTTSPlaying(true)
-
-      blob.arrayBuffer()
-        .then(arrayBuffer => audioContextRef.current!.decodeAudioData(arrayBuffer))
-        .then(audioBuffer => {
-          const source = audioContextRef.current!.createBufferSource()
-          source.buffer = audioBuffer
-          source.connect(audioContextRef.current!.destination)
-          
-          currentAudioSourceRef.current = source
-          
-          source.onended = () => {
-            currentAudioSourceRef.current = null
-            setIsTTSPlaying(false)
-            resolve()
-          }
-          
-          source.start(0)
-        })
-        .catch(err => {
-          currentAudioSourceRef.current = null
-          setIsTTSPlaying(false)
-          reject(err)
-        })
-    })
-  }
-
-  const handleStopTTS = async () => {
-    if (currentAudioSourceRef.current) {
-      try {
-        currentAudioSourceRef.current.stop()
-      } catch {
-        // ignore if already stopped
-      }
-      currentAudioSourceRef.current = null
-      setIsTTSPlaying(false)
-      
-      if (streamMode) {
-        setStreamMode(false)
-        setPushToTalkMode(false)
-        if (listening) {
-          await stop()
-        }
-      }
-      
-      setLoading(false)
-    }
-  }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -302,115 +216,51 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   }
 
   const handleMicClick = () => {
-    if (listening && pushToTalkMode) {
-      void (async () => {
-        setPushToTalkMode(false)
-        await stop()
-      })()
-    } else if (!streamMode && !pushToTalkMode) {
-      // Best-effort audio unlock for push-to-talk
-      try {
-        if (!audioUnlockedRef.current) {
-          const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
-          const AudioCtx = win.AudioContext || win.webkitAudioContext
-          if (AudioCtx) {
-            const ctx = audioContextRef.current || new AudioCtx()
-            audioContextRef.current = ctx
-
-            if (ctx.state === 'suspended') {
-              void ctx.resume()
-            }
-
-            const buffer = ctx.createBuffer(1, 1, ctx.sampleRate)
-            const src = ctx.createBufferSource()
-            src.buffer = buffer
-            src.connect(ctx.destination)
-            src.start(0)
-
-            audioUnlockedRef.current = true
-          }
-        }
-      } catch {
-        // Best-effort
-      }
-
-      void (async () => {
-        setPushToTalkMode(true)
-        await start()
-      })()
+    if (isRecording) {
+      stopRecording()
+    } else {
+      void startRecording()
     }
   }
 
-  const handleStreamClick = () => {
-    // Immediately unlock audio synchronously in the same tick as user gesture for iOS
-    try {
-      if (!audioUnlockedRef.current) {
-        const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
-        const AudioCtx = win.AudioContext || win.webkitAudioContext
-        if (AudioCtx) {
-          const ctx = audioContextRef.current || new AudioCtx()
-          audioContextRef.current = ctx
-
-          if (ctx.state === 'suspended') {
-            void ctx.resume()
-          }
-
-          const buffer = ctx.createBuffer(1, 1, ctx.sampleRate)
-          const src = ctx.createBufferSource()
-          src.buffer = buffer
-          src.connect(ctx.destination)
-          src.start(0)
-
-          audioUnlockedRef.current = true
-        }
-      }
-    } catch {
-      // Best-effort
+  const handleTurnByTurnClick = () => {
+    // If any voice activity is happening, stop everything
+    if (isRecording || isProcessing || isSpeaking) {
+      stopAll()
+    } else {
+      void startRecording()
     }
-
-    // Then continue async stream logic
-    void (async () => {
-      if (streamMode && listening) {
-        setStreamMode(false)
-        setPushToTalkMode(false)
-        await stop()
-      } else {
-        setPushToTalkMode(false)
-        setStreamMode(true)
-        await start()
-      }
-    })()
   }
 
   const handlePhotoSelect = async (file: File) => {
     const id = Math.random().toString(36).substring(7)
     const previewUrl = URL.createObjectURL(file)
-    
+
     const newPhoto: PhotoAttachment = {
       id,
       file,
       previewUrl,
       status: 'uploading'
     }
-    
+
     setPhotos(prev => [...prev, newPhoto])
-    
+
     // Upload photo
     try {
       const formData = new FormData()
       formData.append('file', file)
-      
+
       const res = await fetch('/api/photos/upload', {
         method: 'POST',
         body: formData
       })
-      
+
       if (!res.ok) throw new Error('Upload failed')
-      
+
       const data = await res.json()
       const photoId = data.data.id
       const displayId = data.data.metadata?.display_id
-      
+
       // Move photo to chat immediately with "analyzing" status
       const photoAttachment = {
         id,
@@ -418,62 +268,61 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         displayId,
         previewUrl,
       }
-      
+
       const analyzingMessage: Message = {
         id: 'analyzing-' + String(Date.now()) + Math.random().toString(16).slice(2),
         role: 'assistant',
         text: '',
         photoAttachment,
       }
-      
+
       setMessages((m) => [...m, analyzingMessage])
-      
+
       // Remove photo from attachment area - it's now in the chat
       setPhotos(prev => prev.filter(p => p.id !== id))
-      
+
       // Auto-send message to agent with photo reference (silently)
       const photoRef = displayId || photoId
       const message = `I uploaded a photo (${photoRef}). Can you analyze it and tell me what you see?`
-      
+
       // Call agent to analyze
       setLoading(true)
-      
+
       try {
         const aiRes = await fetch('/api/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message,
             threadId: threadId || undefined,
-            streamMode: false,
           }),
         })
-        
+
         if (!aiRes.ok) {
           throw new Error('AI analysis failed')
         }
-        
+
         const json = await aiRes.json()
-        
+
         const responseThreadId = json?.data?.threadId || json?.threadId
         if (responseThreadId && responseThreadId !== threadId) {
           setThreadId(responseThreadId)
         }
-        
+
         const assistantText =
           json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
-        
+
         // Replace the "analyzing" message with the actual analysis
-        setMessages((m) => m.map(msg => 
+        setMessages((m) => m.map(msg =>
           msg.id === analyzingMessage.id
             ? {
-                ...msg,
-                text: String(assistantText),
-              }
+              ...msg,
+              text: String(assistantText),
+            }
             : msg
         ))
-        
+
       } catch (aiErr) {
         console.error('AI analysis error:', aiErr)
         setMessages((m) => [
@@ -484,20 +333,20 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             text: 'Sorry — I had trouble analyzing the photo. ' + (aiErr instanceof Error ? aiErr.message : ''),
           },
         ])
-        
-        setPhotos(prev => prev.map(p => 
-          p.id === id 
+
+        setPhotos(prev => prev.map(p =>
+          p.id === id
             ? { ...p, status: 'error' }
             : p
         ))
       } finally {
         setLoading(false)
       }
-      
+
     } catch (err) {
       console.error('Photo upload error:', err)
-      setPhotos(prev => prev.map(p => 
-        p.id === id 
+      setPhotos(prev => prev.map(p =>
+        p.id === id
           ? { ...p, status: 'error' }
           : p
       ))
@@ -516,15 +365,15 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   const handleDocumentSelect = async (file: File) => {
     const id = Math.random().toString(36).substring(7)
-    
+
     const newDoc: DocumentAttachment = {
       id,
       file,
       status: 'uploading'
     }
-    
+
     setDocuments(prev => [...prev, newDoc])
-    
+
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -533,21 +382,21 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       formData.append('title', fileName)
       formData.append('type', 'other') // Default type
       formData.append('scope', 'company') // Default scope
-      
+
       const res = await fetch('/api/documents', {
         method: 'POST',
         body: formData
       })
-      
+
       if (!res.ok) throw new Error('Upload failed')
-      
+
       const data = await res.json()
       const docId = data.data?.id || data.id
       const displayId = data.data?.display_id || data.display_id
-      
+
       // Remove from attachment area - document will appear in chat
       setDocuments(prev => prev.filter(d => d.id !== id))
-      
+
       // Add analyzing message to chat with document reference
       const docRef = displayId || docId
       const analyzingMessage: Message = {
@@ -561,51 +410,50 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           fileName: file.name,
         },
       }
-      
+
       setMessages((m) => [...m, analyzingMessage])
-      
+
       // Auto-send message to agent to analyze document (mirror photo pattern)
       const message = `I uploaded a document "${file.name}" (${docRef}). Can you analyze it and tell me what it contains?`
-      
+
       // Call agent to analyze
       setLoading(true)
-      
+
       try {
         const aiRes = await fetch('/api/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message,
             threadId: threadId || undefined,
-            streamMode: false,
           }),
         })
-        
+
         if (!aiRes.ok) {
           throw new Error('AI analysis failed')
         }
-        
+
         const json = await aiRes.json()
-        
+
         const responseThreadId = json?.data?.threadId || json?.threadId
         if (responseThreadId && responseThreadId !== threadId) {
           setThreadId(responseThreadId)
         }
-        
+
         const assistantText =
           json?.assistant?.text ?? json?.data?.assistant?.text ?? json?.message ?? JSON.stringify(json)
-        
+
         // Replace the "analyzing" message with the actual analysis
-        setMessages((m) => m.map(msg => 
+        setMessages((m) => m.map(msg =>
           msg.id === analyzingMessage.id
             ? {
-                ...msg,
-                text: String(assistantText),
-              }
+              ...msg,
+              text: String(assistantText),
+            }
             : msg
         ))
-        
+
       } catch (aiErr) {
         console.error('AI analysis error:', aiErr)
         setMessages((m) => [
@@ -619,11 +467,11 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       } finally {
         setLoading(false)
       }
-      
+
     } catch (err) {
       console.error('Document upload error:', err)
-      setDocuments(prev => prev.map(d => 
-        d.id === id 
+      setDocuments(prev => prev.map(d =>
+        d.id === id
           ? { ...d, status: 'error' }
           : d
       ))
@@ -649,19 +497,19 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
               <div key={photo.id} className="relative group flex-shrink-0">
                 <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img 
-                    src={photo.previewUrl} 
-                    alt="Preview" 
+                  <img
+                    src={photo.previewUrl}
+                    alt="Preview"
                     className={`w-full h-full object-cover ${photo.status === 'uploading' ? 'opacity-50' : ''}`}
                   />
                 </div>
-                
+
                 {photo.status === 'uploading' && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <Loader2 className="w-6 h-6 text-brand animate-spin" />
                   </div>
                 )}
-                
+
                 {photo.status === 'error' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-red-50/80">
                     <span className="text-xs text-red-600 font-medium">Error</span>
@@ -690,12 +538,12 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
                   <span className="text-sm text-gray-700 max-w-[120px] truncate">
                     {doc.file.name}
                   </span>
-                  
+
                   {(doc.status === 'uploading' || doc.status === 'processing') && (
                     <Loader2 className="w-4 h-4 text-brand animate-spin" />
                   )}
                 </div>
-                
+
                 {doc.status === 'error' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-red-50/80 rounded-lg">
                     <span className="text-xs text-red-600 font-medium">Error</span>
@@ -720,22 +568,37 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           </div>
         )}
 
-        <ChatInput
-        input={input}
-        setInput={setInput}
-        onSend={() => void send()}
-        onKeyDown={onKeyDown}
-        listening={listening}
-        onMicClick={handleMicClick}
-        onStreamClick={handleStreamClick}
-        loading={loading}
-        streamMode={streamMode}
-        pushToTalkMode={pushToTalkMode}
-        isTTSPlaying={isTTSPlaying}
-        onStopTTS={handleStopTTS}
-        onPhotoSelect={handlePhotoSelect}
-        onDocumentSelect={handleDocumentSelect}
-      />
+        <div className="border-t border-gray-100">
+          {/* Silence Detector (only visible when recording) */}
+          <SilenceDetector
+            stream={stream}
+            onSilenceDetected={() => {
+              console.log('Silence detected, stopping recording...')
+              stopRecording()
+            }}
+            enabled={isRecording}
+          />
+
+          <ChatInput
+            input={input}
+            setInput={setInput}
+            onSend={() => void send()}
+            onKeyDown={onKeyDown}
+            listening={isRecording}
+            onMicClick={handleMicClick}
+            onTurnByTurnClick={handleTurnByTurnClick}
+            loading={loading || isProcessing}
+            streamMode={false}
+            pushToTalkMode={false}
+            turnByTurnMode={true}
+            isTTSPlaying={isSpeaking}
+            onStopTTS={stopAll}  // Use stopAll to stop everything
+            onPhotoSelect={handlePhotoSelect}
+            onDocumentSelect={handleDocumentSelect}
+            selectedLanguage={selectedLanguage}
+            onLanguageChange={setSelectedLanguage}
+          />
+        </div>
       </div>
     </div>
   )
