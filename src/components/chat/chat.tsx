@@ -1,11 +1,15 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { useTurnByTurn } from '@/hooks/useTurnByTurn'
+import { useVoiceFactory, VoiceMode } from '@/hooks/useVoiceFactory'
 import { ChatMessages } from './chat-messages'
 import { ChatInput } from './chat-input'
 import { SilenceDetector } from '@/components/voice/SilenceDetector'
 import { X, Loader2, FileText } from 'lucide-react'
+
+// Switch this to 'turn-by-turn' to use Google Transcribe + TTS
+// Switch this to 'web-speech' to use Browser Speech API (STT only)
+const VOICE_MODE: VoiceMode = 'web-speech'
 
 export type Message = {
   id: string
@@ -56,19 +60,25 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const [documents, setDocuments] = useState<DocumentAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  // Turn-by-turn voice hook
+  const [streamMode, setStreamMode] = useState(false)
+  const [pushToTalkMode, setPushToTalkMode] = useState(false)
+  const isAutoRestarting = useRef(false)
+
+  // Voice Factory Hook (handles both Web Speech and Turn-by-Turn)
   const {
     state: voiceState,
     error: voiceError,
-    startRecording,
-    stopRecording,
+    start,
+    stop,
     stopAudio,
-    stopAll,  // New: stop everything
+    stopAll,
     isRecording,
     isProcessing,
     isSpeaking,
     stream,
-  } = useTurnByTurn({
+    partial,
+  } = useVoiceFactory({
+    mode: VOICE_MODE,
     onTranscribing: () => {
       // Add temporary "Transcribing..." message (right side - user)
       const transcribingMessage: Message = {
@@ -120,6 +130,18 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         setThreadId(newThreadId)
       }
     },
+    // Callback for Web Speech mode
+    onFinalTranscript: (text) => {
+      if (streamMode) {
+        stop() // Stop listening immediately to prevent echo/self-recording
+        void send(text, true)
+      } else {
+        // Dictation mode: update input and stop
+        setInput(text)
+        stop()
+        setPushToTalkMode(false)
+      }
+    },
     autoContinue: true,
     threadId: threadId
   })
@@ -129,9 +151,21 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading, voiceState])
 
+  // Effect to update input with partial transcript (Web Speech mode)
+  useEffect(() => {
+    if (VOICE_MODE === 'web-speech' && isRecording && partial) {
+      setInput(partial)
+    }
+  }, [isRecording, partial])
+
   useEffect(() => {
     if (voiceError) {
-      setError(voiceError)
+      if (isAutoRestarting.current) {
+        // Suppress error during auto-restart (e.g. iOS permission issues)
+        console.warn('Suppressed voice error during auto-restart:', voiceError)
+      } else {
+        setError(voiceError)
+      }
     }
   }, [voiceError])
 
@@ -148,7 +182,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const send = async (text?: string) => {
+  const send = async (text?: string, isVoice: boolean = false) => {
     const messageText = (text ?? input).trim()
     if (!messageText) return
 
@@ -172,6 +206,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         body: JSON.stringify({
           message: messageText,
           threadId: threadId || undefined,
+          streamMode: isVoice, // Enable TTS if voice
         }),
       })
 
@@ -198,6 +233,26 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       setMessages((m) => [...m, assistantMessage])
 
+      // If we have audio response and we are in web-speech mode (or just requested voice), play it
+      if (json?.assistant?.audioBase64) {
+        const audio = new Audio(`data:audio/mp3;base64,${json.assistant.audioBase64}`)
+
+        audio.onended = async () => {
+          if (VOICE_MODE === 'web-speech' && isVoice && streamMode) {
+            console.log('Audio ended, waiting before restarting listening...')
+            // Add delay to prevent recording the tail of the audio/echo
+            setTimeout(async () => {
+              isAutoRestarting.current = true
+              await start()
+              // Reset flag after a short delay to allow error effect to process if needed
+              setTimeout(() => { isAutoRestarting.current = false }, 1000)
+            }, 500)
+          }
+        }
+
+        audio.play().catch(e => console.error('Failed to play audio response:', e))
+      }
+
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
       setMessages((m) => [
@@ -222,18 +277,31 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   const handleMicClick = () => {
     if (isRecording) {
-      stopRecording()
+      setPushToTalkMode(false)
+      stop()
     } else {
-      void startRecording()
+      // If stream mode is active, stop it first
+      if (streamMode) {
+        setStreamMode(false)
+        stop()
+        return
+      }
+      setPushToTalkMode(true)
+      void start()
     }
   }
 
   const handleTurnByTurnClick = () => {
-    // If any voice activity is happening, stop everything
-    if (isRecording || isProcessing || isSpeaking) {
+    if (streamMode && isRecording) {
+      setStreamMode(false)
       stopAll()
     } else {
-      void startRecording()
+      // If push to talk is active, stop it first
+      if (pushToTalkMode) {
+        setPushToTalkMode(false)
+      }
+      setStreamMode(true)
+      void start()
     }
   }
 
@@ -579,7 +647,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             stream={stream}
             onSilenceDetected={() => {
               console.log('Silence detected, stopping recording...')
-              stopRecording()
+              stop()
             }}
             enabled={isRecording}
           />
@@ -593,8 +661,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             onMicClick={handleMicClick}
             onTurnByTurnClick={handleTurnByTurnClick}
             loading={loading || isProcessing}
-            streamMode={false}
-            pushToTalkMode={false}
+            streamMode={streamMode}
+            pushToTalkMode={pushToTalkMode}
             turnByTurnMode={true}
             isTTSPlaying={isSpeaking}
             onStopTTS={stopAll}  // Use stopAll to stop everything

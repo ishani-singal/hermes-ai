@@ -26,7 +26,7 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
-  const [attachments, setAttachments] = useState<Array<{ id: string; file_url: string; file_name: string; file_type: string; description?: string }>>([])
+  const [attachments, setAttachments] = useState<Array<{ id: string; file_url: string; display_id: string; description?: string; title?: string; isPhoto: boolean }>>([])
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,7 +55,7 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
       setIsEditing(false)
       setError(null)
       setShowAttachments(false)
-      
+
       // Load attachments
       loadAttachments()
     }
@@ -63,16 +63,34 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
 
   const loadAttachments = async () => {
     if (!equipment) return
-    
+
     setIsLoadingAttachments(true)
     try {
       const photosRes = await fetch(`/api/photos?equipment_id=${equipment.id}`)
       const docsRes = await fetch(`/api/documents?equipment_id=${equipment.id}`)
-      
-      const photos = photosRes.ok ? (await photosRes.json()).data : []
-      const docs = docsRes.ok ? (await docsRes.json()).data : []
-      
-      setAttachments([...photos, ...docs])
+
+      const photosData = photosRes.ok ? (await photosRes.json()).data : []
+      const docsData = docsRes.ok ? (await docsRes.json()).data : []
+
+      // Map photos to attachment format
+      const photoAttachments = photosData.map((photo: { id: string; file_url: string; display_id: string; description: string; }) => ({
+        id: photo.id,
+        file_url: photo.file_url,
+        display_id: photo.display_id,
+        description: photo.description,
+        isPhoto: true,
+      }))
+
+      // Map documents to attachment format
+      const docAttachments = docsData.map((doc: { id: string; file_url: string; display_id: string; title: string; }) => ({
+        id: doc.id,
+        file_url: doc.file_url,
+        display_id: doc.display_id,
+        title: doc.title,
+        isPhoto: false,
+      }))
+
+      setAttachments([...photoAttachments, ...docAttachments])
     } catch (err) {
       console.error('Failed to load attachments:', err)
     } finally {
@@ -195,196 +213,196 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
       size="lg"
     >
       {!showAttachments ? (
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
-        {/* Read-only metadata */}
-        {!isEditing && (
-          <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm">
-              <span className="text-gray-500">Equipment ID:</span>
-              <span className="ml-2 font-mono font-semibold text-gray-900">
-                {equipment.display_id}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="h-4 w-4" />
-              <span>Created: {new Date(equipment.created_at).toLocaleString()}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="h-4 w-4" />
-              <span>Updated: {new Date(equipment.updated_at).toLocaleString()}</span>
-            </div>
-            
-            {/* Attachments Summary */}
-            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Paperclip className="h-4 w-4" />
-                <span>{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</span>
+          {/* Read-only metadata */}
+          {!isEditing && (
+            <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+              <div className="text-sm">
+                <span className="text-gray-500">Equipment ID:</span>
+                <span className="ml-2 font-mono font-semibold text-gray-900">
+                  {equipment.display_id}
+                </span>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAttachments(true)}
-              >
-                View/Add Attachments
-              </Button>
-            </div>
-          </div>
-        )}
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Clock className="h-4 w-4" />
+                <span>Created: {new Date(equipment.created_at).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Clock className="h-4 w-4" />
+                <span>Updated: {new Date(equipment.updated_at).toLocaleString()}</span>
+              </div>
 
-        <Input
-          label="Equipment Name *"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          error={errors.name}
-          disabled={!isEditing}
-          maxLength={255}
-        />
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
-            label="Type"
-            value={formData.type}
-            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-            disabled={!isEditing}
-          />
-
-          <Input
-            label="Manufacturer"
-            value={formData.manufacturer}
-            onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
-            disabled={!isEditing}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
-            label="Model"
-            value={formData.model}
-            onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-            disabled={!isEditing}
-          />
-
-          <Input
-            label="Serial Number"
-            value={formData.serial_number}
-            onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
-            disabled={!isEditing}
-          />
-        </div>
-
-        <Input
-          label="Location"
-          value={formData.location}
-          onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-          disabled={!isEditing}
-        />
-
-        {/* Action Buttons (when editing) */}
-        {isEditing && (
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              isLoading={isSubmitting}
-              disabled={isSubmitting}
-            >
-              Save Changes
-            </Button>
-          </div>
-        )}
-
-        {/* Non-editing action buttons */}
-        {!isEditing && !showDeleteConfirm && (
-          <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
-            <div>
-              {isAdmin && (
+              {/* Attachments Summary */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Paperclip className="h-4 w-4" />
+                  <span>{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</span>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="text-red-600 hover:text-red-700 hover:border-red-300"
+                  size="sm"
+                  onClick={() => setShowAttachments(true)}
                 >
-                  Delete
+                  View/Add Attachments
                 </Button>
-              )}
+              </div>
             </div>
-            <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Close
-              </Button>
-              {canEdit && (
-                <Button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                >
-                  Edit
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Delete Confirmation */}
-        {!isEditing && showDeleteConfirm && (
-          <div className="pt-4 border-t border-gray-200">
-            <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
-              <h4 className="font-semibold text-red-900 mb-2">Delete Equipment?</h4>
-              <p className="text-sm text-red-800 mb-1">
-                Are you sure you want to delete this equipment record?
-              </p>
-              <p className="text-sm text-red-700">
-                <strong>Display ID:</strong> {equipment.display_id}
-              </p>
-              <p className="text-sm text-red-700">
-                <strong>Name:</strong> {equipment.name}
-              </p>
-              <p className="text-sm text-red-800 mt-2 font-medium">
-                This action cannot be undone.
-              </p>
-            </div>
-            <div className="flex gap-3 justify-end">
+          <Input
+            label="Equipment Name *"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            error={errors.name}
+            disabled={!isEditing}
+            maxLength={255}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Type"
+              value={formData.type}
+              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+              disabled={!isEditing}
+            />
+
+            <Input
+              label="Manufacturer"
+              value={formData.manufacturer}
+              onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Model"
+              value={formData.model}
+              onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+              disabled={!isEditing}
+            />
+
+            <Input
+              label="Serial Number"
+              value={formData.serial_number}
+              onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
+              disabled={!isEditing}
+            />
+          </div>
+
+          <Input
+            label="Location"
+            value={formData.location}
+            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+            disabled={!isEditing}
+          />
+
+          {/* Action Buttons (when editing) */}
+          {isEditing && (
+            <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setShowDeleteConfirm(false)
-                  setError(null)
-                }}
-                disabled={isDeleting}
+                onClick={handleCancel}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
               <Button
-                type="button"
-                onClick={handleDelete}
-                isLoading={isDeleting}
-                disabled={isDeleting}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                type="submit"
+                isLoading={isSubmitting}
+                disabled={isSubmitting}
               >
-                Delete Equipment
+                Save Changes
               </Button>
             </div>
-          </div>
-        )}
-      </form>
+          )}
+
+          {/* Non-editing action buttons */}
+          {!isEditing && !showDeleteConfirm && (
+            <div className="flex gap-3 justify-between pt-4 border-t border-gray-200">
+              <div>
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-red-600 hover:text-red-700 hover:border-red-300"
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Close
+                </Button>
+                {canEdit && (
+                  <Button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    Edit
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation */}
+          {!isEditing && showDeleteConfirm && (
+            <div className="pt-4 border-t border-gray-200">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md mb-4">
+                <h4 className="font-semibold text-red-900 mb-2">Delete Equipment?</h4>
+                <p className="text-sm text-red-800 mb-1">
+                  Are you sure you want to delete this equipment record?
+                </p>
+                <p className="text-sm text-red-700">
+                  <strong>Display ID:</strong> {equipment.display_id}
+                </p>
+                <p className="text-sm text-red-700">
+                  <strong>Name:</strong> {equipment.name}
+                </p>
+                <p className="text-sm text-red-800 mt-2 font-medium">
+                  This action cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setError(null)
+                  }}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDelete}
+                  isLoading={isDeleting}
+                  disabled={isDeleting}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Delete Equipment
+                </Button>
+              </div>
+            </div>
+          )}
+        </form>
       ) : (
         /* Attachments View */
         <div className="space-y-4">
@@ -409,16 +427,11 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {attachments.map((att) => (
                 <div key={att.id} className="border border-gray-200 rounded-lg p-3 hover:border-brand transition-colors">
-                  <a 
-                    href={att.file_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-3"
-                  >
-                    {att.file_type.startsWith('image/') ? (
-                      <img 
-                        src={att.file_url} 
-                        alt={att.file_name}
+                  <div className="flex items-start gap-3">
+                    {att.isPhoto ? (
+                      <img
+                        src={att.file_url}
+                        alt={att.description || `Attachment ${att.display_id}`}
                         className="w-16 h-16 object-cover rounded"
                       />
                     ) : (
@@ -428,15 +441,24 @@ export function EquipmentDetail({ equipment, open, onOpenChange, onSuccess }: Eq
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {att.file_name}
+                        {att.isPhoto ? att.display_id : att.title}
                       </p>
                       {att.description && (
                         <p className="text-xs text-gray-500 mt-1">
                           {att.description}
                         </p>
                       )}
+                      <a
+                        href={att.file_url}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand hover:text-brand-dark mt-1 inline-block"
+                      >
+                        Download
+                      </a>
                     </div>
-                  </a>
+                  </div>
                 </div>
               ))}
             </div>

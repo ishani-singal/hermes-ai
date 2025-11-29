@@ -43,7 +43,7 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
-  const [attachments, setAttachments] = useState<Array<{ id: string; file_url: string; file_name: string; file_type: string; description?: string }>>([])
+  const [attachments, setAttachments] = useState<Array<{ id: string; file_url: string; display_id: string; description?: string; title?: string; isPhoto: boolean }>>([])
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; label: string }>>([])
@@ -137,10 +137,28 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
       const photosRes = await fetch(`/api/photos?work_order_id=${workOrder.id}`);
       const docsRes = await fetch(`/api/documents?work_order_id=${workOrder.id}`);
 
-      const photos = photosRes.ok ? (await photosRes.json()).data : [];
-      const docs = docsRes.ok ? (await docsRes.json()).data : [];
+      const photosData = photosRes.ok ? (await photosRes.json()).data : [];
+      const docsData = docsRes.ok ? (await docsRes.json()).data : [];
 
-      setAttachments([...photos, ...docs]);
+      // Map photos to attachment format
+      const photoAttachments = photosData.map((photo: { id: string; file_url: string; display_id: string; description: string; }) => ({
+        id: photo.id,
+        file_url: photo.file_url,
+        display_id: photo.display_id,
+        description: photo.description,
+        isPhoto: true,
+      }));
+
+      // Map documents to attachment format
+      const docAttachments = docsData.map((doc: { id: string; file_url: string; display_id: string; title: string; }) => ({
+        id: doc.id,
+        file_url: doc.file_url,
+        display_id: doc.display_id,
+        title: doc.title,
+        isPhoto: false,
+      }));
+
+      setAttachments([...photoAttachments, ...docAttachments]);
     } catch (err) {
       console.error('Failed to load attachments:', err);
     } finally {
@@ -582,16 +600,11 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {attachments.map((att) => (
                 <div key={att.id} className="border border-gray-200 rounded-lg p-3 hover:border-brand transition-colors">
-                  <a
-                    href={att.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-3"
-                  >
-                    {att.file_type.startsWith('image/') ? (
+                  <div className="flex items-start gap-3">
+                    {att.isPhoto ? (
                       <img
                         src={att.file_url}
-                        alt={att.file_name}
+                        alt={att.description || `Attachment ${att.display_id}`}
                         className="w-16 h-16 object-cover rounded"
                       />
                     ) : (
@@ -601,15 +614,24 @@ export function WorkOrderDetail({ workOrder, open, onOpenChange, onSuccess }: Wo
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {att.file_name}
+                        {att.isPhoto ? att.display_id : att.title}
                       </p>
                       {att.description && (
                         <p className="text-xs text-gray-500 mt-1">
                           {att.description}
                         </p>
                       )}
+                      <a
+                        href={att.file_url}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand hover:text-brand-dark mt-1 inline-block"
+                      >
+                        Download
+                      </a>
                     </div>
-                  </a>
+                  </div>
                 </div>
               ))}
             </div>
