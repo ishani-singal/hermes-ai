@@ -113,6 +113,13 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       setMessages((m) => m.filter(msg => !msg.id.startsWith('transcribing-') && !msg.id.startsWith('thinking-')))
       setError(err)
     },
+    onThreadIdUpdate: (newThreadId) => {
+      // Update threadId for conversation continuity
+      if (newThreadId && newThreadId !== threadId) {
+        console.log('[Chat] Updating threadId:', newThreadId)
+        setThreadId(newThreadId)
+      }
+    },
     autoContinue: true,
     threadId: threadId
   })

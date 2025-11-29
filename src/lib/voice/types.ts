@@ -19,7 +19,7 @@ export interface IVoiceProvider {
 }
 
 // Turn-by-turn conversation types
-export type ConversationState = 
+export type ConversationState =
   | 'idle'           // Ready to start
   | 'recording'      // User is speaking
   | 'processing'     // STT + Translation + LLM + TTS
@@ -31,6 +31,7 @@ export interface ConversationResponse {
   response: string;
   audioBase64: string;
   language: string;
+  threadId?: string;  // Thread ID for conversation continuity
 }
 
 export interface SilenceDetectorConfig {

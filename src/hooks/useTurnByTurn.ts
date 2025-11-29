@@ -12,6 +12,7 @@ export interface UseTurnByTurnOptions {
     onResponse?: (text: string) => void
     onError?: (error: string) => void
     onTranscribing?: () => void  // Called when transcription starts
+    onThreadIdUpdate?: (threadId: string) => void  // Called when threadId is received from API
     autoContinue?: boolean
     threadId?: string | null
 }
@@ -30,6 +31,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
+    const audioElementRef = useRef<HTMLAudioElement | null>(null)  // HTML5 Audio for iOS compatibility
     const audioContextRef = useRef<AudioContext | null>(null)
     const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null)
     const streamRef = useRef<MediaStream | null>(null)
@@ -37,7 +39,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
     const aiAbortRef = useRef<AbortController | null>(null)
     const isAbortedRef = useRef<boolean>(false)  // Track if user manually stopped
 
-    // Initialize AudioContext
+    // Initialize AudioContext (keeping for potential future use)
     useEffect(() => {
         const AudioContextClass = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
         if (AudioContextClass) {
@@ -51,6 +53,15 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
     }, [])
 
     const stopAudio = useCallback(() => {
+        // Stop HTML5 Audio element (iOS-friendly approach)
+        if (audioElementRef.current) {
+            audioElementRef.current.pause()
+            audioElementRef.current.currentTime = 0
+            audioElementRef.current.src = ''
+            audioElementRef.current = null
+        }
+
+        // Stop WebAudio API source (desktop approach)
         if (sourceNodeRef.current) {
             try {
                 sourceNodeRef.current.stop()
@@ -59,6 +70,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
             }
             sourceNodeRef.current = null
         }
+
         setIsSpeaking(false)
         setState('idle')
     }, [])
@@ -129,17 +141,13 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
     }, [stopAudio]) // processAudio is defined below, but we need to break circular dependency or use ref
 
     const playAudio = useCallback(async (base64Audio: string) => {
-        if (!audioContextRef.current) return
-
         try {
-            // iOS Safari requires AudioContext to be resumed after user interaction
-            // This fixes the issue where audio doesn't play after the first time
-            if (audioContextRef.current.state === 'suspended') {
-                console.log('[Audio] Resuming suspended AudioContext (iOS fix)')
-                await audioContextRef.current.resume()
-            }
+            console.log('[Audio] Starting playback...')
 
-            // Decode base64
+            // Stop any current audio
+            stopAudio()
+
+            // Decode base64 to binary
             const binaryString = window.atob(base64Audio)
             const len = binaryString.length
             const bytes = new Uint8Array(len)
@@ -147,18 +155,20 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
                 bytes[i] = binaryString.charCodeAt(i)
             }
 
-            // Decode audio data
-            const audioBuffer = await audioContextRef.current.decodeAudioData(bytes.buffer)
+            // Create a blob from the audio data
+            // The audio from Google TTS is typically MP3 or WAV
+            const audioBlob = new Blob([bytes], { type: 'audio/mpeg' })
+            const audioUrl = URL.createObjectURL(audioBlob)
 
-            // Stop any current audio
-            stopAudio()
+            // Use HTML5 Audio element for iOS compatibility
+            // This works much better on iOS than WebAudio API
+            const audio = new Audio(audioUrl)
+            audioElementRef.current = audio
 
-            // Create source
-            const source = audioContextRef.current.createBufferSource()
-            source.buffer = audioBuffer
-            source.connect(audioContextRef.current.destination)
-
-            source.onended = () => {
+            // Set up event handlers
+            audio.onended = () => {
+                console.log('[Audio] Playback ended')
+                URL.revokeObjectURL(audioUrl)  // Clean up blob URL
                 setIsSpeaking(false)
                 setState('idle')
 
@@ -171,17 +181,59 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
                 }
             }
 
-            sourceNodeRef.current = source
-            source.start(0)
-            setIsSpeaking(true)
-            setState('speaking')
+            audio.onerror = (e) => {
+                console.error('[Audio] Playback error:', e)
+                URL.revokeObjectURL(audioUrl)
+                // Don't set error state - just log it and continue
+                console.warn('[Audio] Audio playback failed, but continuing...')
+                setIsSpeaking(false)
+                setState('idle')
 
-            console.log('[Audio] Playback started successfully')
+                // Still trigger auto-continue if enabled
+                if (options.autoContinue) {
+                    console.log('Audio error, but restarting recording loop...')
+                    setTimeout(() => {
+                        startRecording()
+                    }, 500)
+                }
+            }
+
+            // Start playback
+            try {
+                await audio.play()
+                setIsSpeaking(true)
+                setState('speaking')
+                console.log('[Audio] Playback started successfully')
+            } catch (playErr) {
+                // Handle autoplay restrictions gracefully
+                console.warn('[Audio] Autoplay blocked or failed:', playErr)
+                URL.revokeObjectURL(audioUrl)
+                // Don't throw error - just continue the flow
+                setIsSpeaking(false)
+                setState('idle')
+
+                // Still allow auto-continue
+                if (options.autoContinue) {
+                    console.log('Audio autoplay blocked, but restarting recording loop...')
+                    setTimeout(() => {
+                        startRecording()
+                    }, 500)
+                }
+            }
 
         } catch (err) {
-            console.error('Error playing audio:', err)
-            setError('Failed to play audio response')
+            console.error('Error preparing audio:', err)
+            // Don't set error state - just log and continue
+            console.warn('[Audio] Audio preparation failed, but continuing...')
             setState('idle')
+
+            // Still allow auto-continue even if audio prep fails
+            if (options.autoContinue) {
+                console.log('Audio prep failed, but restarting recording loop...')
+                setTimeout(() => {
+                    startRecording()
+                }, 500)
+            }
         }
     }, [stopAudio, options.autoContinue, startRecording])
 
@@ -243,6 +295,11 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
             }
 
             const turnData: ConversationResponse = await turnRes.json()
+
+            // Update threadId for conversation continuity
+            if (turnData.threadId && options.onThreadIdUpdate) {
+                options.onThreadIdUpdate(turnData.threadId)
+            }
 
             // Show AI response text
             options.onResponse?.(turnData.response)

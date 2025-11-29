@@ -59,19 +59,21 @@ export async function POST(request: NextRequest) {
 
         const aiResponseText = aiData?.assistant?.text ?? aiData?.data?.assistant?.text ?? ''
         const audioBase64 = aiData?.assistant?.audioBase64 ?? aiData?.data?.assistant?.audioBase64
+        const responseThreadId = aiData?.threadId ?? aiData?.data?.threadId
 
         if (!aiResponseText) {
             console.error('[Turn API] Could not find text in response')
             throw new Error('No response from AI')
         }
 
-        console.log(`[Turn API] Response ready, audio present: ${!!audioBase64}`)
+        console.log(`[Turn API] Response ready, audio present: ${!!audioBase64}, threadId: ${responseThreadId}`)
 
         return NextResponse.json({
             transcript: message,
             response: aiResponseText,
             audioBase64: audioBase64,
-            language  // Always English
+            language,  // Always English
+            threadId: responseThreadId  // Return threadId for conversation continuity
         })
 
     } catch (error) {
