@@ -35,9 +35,7 @@ export const assistantWorkflow = createWorkflow({
     audioBase64: z.string().optional(),
   }),
 })
-  .then(translateToEnglishStep)
   .then(technicianStep)
   .then(voiceFormatterStep)
-  .then(translateBackStep)
   .then(ttsStep)
   .commit();

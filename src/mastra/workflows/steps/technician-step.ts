@@ -3,12 +3,12 @@ import { z } from 'zod'
 
 /**
  * Technician assistant workflow step
- * Processes user queries using the technician agent with memory/context
+ * Processes user queries using the technician agent with medmory/context
  */
 export const technicianStep = createStep({
     id: 'technician-step',
     inputSchema: z.object({
-        text: z.string(),
+        message: z.string(),
         language: z.string().optional(),
         mode: z.enum(['TEXT', 'VOICE']),
         threadId: z.string().optional(),
@@ -20,11 +20,11 @@ export const technicianStep = createStep({
         mode: z.enum(['TEXT', 'VOICE']),
     }),
     execute: async ({ inputData, mastra, runtimeContext }) => {
-        const { text, language, mode, threadId, resourceId } = inputData
+        const { message, language, mode, threadId, resourceId } = inputData
 
         console.log('[Workflow] Technician agent: Starting')
         const technicianAgent = mastra.getAgent('technicianAgent')
-        const response = await technicianAgent.generate(text, {
+        const response = await technicianAgent.generate(message, {
             runtimeContext,
             memory: threadId ? {
                 resource: resourceId || '',

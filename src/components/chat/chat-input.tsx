@@ -3,8 +3,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Mic, StopCircle, Plus, Camera, Image as ImageIcon, FileText, Radio } from 'lucide-react'
 import { CameraModal } from '@/components/ui/camera-modal'
-import { LanguageSelector } from '@/components/voice/LanguageSelector'
-import { LanguageOption } from '@/lib/voice/types'
 
 type ChatInputProps = {
   input: string
@@ -22,8 +20,6 @@ type ChatInputProps = {
   onStopTTS?: () => void
   onPhotoSelect?: (file: File) => void
   onDocumentSelect?: (file: File) => void
-  selectedLanguage?: LanguageOption
-  onLanguageChange?: (language: LanguageOption) => void
 }
 
 export function ChatInput({
@@ -42,8 +38,6 @@ export function ChatInput({
   onStopTTS,
   onPhotoSelect,
   onDocumentSelect,
-  selectedLanguage,
-  onLanguageChange,
 }: ChatInputProps) {
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [showCameraModal, setShowCameraModal] = useState(false)
@@ -263,13 +257,6 @@ export function ChatInput({
                 )}
               </span>
             </button>
-          )}
-          {onLanguageChange && (
-            <LanguageSelector
-              value={selectedLanguage?.code}
-              onChange={onLanguageChange}
-              className="ml-2"
-            />
           )}
         </div>
       </div>

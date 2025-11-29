@@ -68,8 +68,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     isProcessing,
     isSpeaking,
     stream,
-    selectedLanguage,
-    setSelectedLanguage
   } = useTurnByTurn({
     onTranscribing: () => {
       // Add temporary "Transcribing..." message (right side - user)
@@ -595,8 +593,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             onStopTTS={stopAll}  // Use stopAll to stop everything
             onPhotoSelect={handlePhotoSelect}
             onDocumentSelect={handleDocumentSelect}
-            selectedLanguage={selectedLanguage}
-            onLanguageChange={setSelectedLanguage}
           />
         </div>
       </div>

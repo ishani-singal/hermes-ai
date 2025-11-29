@@ -3,18 +3,22 @@ import { NextRequest, NextResponse } from 'next/server'
 /**
  * Voice Conversation Turn Endpoint
  * 
- * Simplified wrapper that calls /api/ai with language parameter.
- * The workflow handles all translation and TTS generation.
+ * Simplified wrapper that calls /api/ai.
+ * 
+ * TODO: Add automatic language detection in the future
+ * For now, we're focusing on solidifying the English language experience
+ * Once stable, we'll add auto-detection and enable translation
  * 
  * Flow:
- * 1. Accept transcribed text and language
- * 2. Call /api/ai with proper auth headers and language
- * 3. Return response with audio
+ * 1. Accept transcribed text (always in English for now)
+ * 2. Call /api/ai with proper auth headers
+ * 3. Return response with audio (in English)
  */
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
-        const { message, language, threadId } = body
+        const { message, threadId } = body
+        // Language parameter is ignored for now - always use English
 
         if (!message) {
             return NextResponse.json(
@@ -23,7 +27,9 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        console.log(`[Turn API] Processing: "${message}" (${language || 'en-US'})`)
+        // Always use English for now
+        const language = 'en-US'
+        console.log(`[Turn API] Processing: "${message}" (${language})`)
 
         // Call /api/ai internally with proper auth
         const baseUrl = process.env.INTERNAL_API_BASE_URL || 'http://localhost:3000'
@@ -39,7 +45,7 @@ export async function POST(request: NextRequest) {
                 message,
                 threadId: threadId || undefined,
                 streamMode: true,  // VOICE mode
-                language: language || 'en-US',
+                language,  // Always English
             }),
         })
 
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
             transcript: message,
             response: aiResponseText,
             audioBase64: audioBase64,
-            language: language || 'en-US'
+            language  // Always English
         })
 
     } catch (error) {

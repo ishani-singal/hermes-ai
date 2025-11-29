@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { ConversationState, ConversationResponse, LanguageOption } from '@/lib/voice/types'
-import { SUPPORTED_LANGUAGES } from '@/lib/voice/constants'
+import { ConversationState, ConversationResponse } from '@/lib/voice/types'
+
+// TODO: Add automatic language detection in the future
+// For now, we're focusing on solidifying the English language experience
+// Once stable, we'll add auto-detection and enable translation
 
 export interface UseTurnByTurnOptions {
     onTranscript?: (text: string) => void
@@ -21,23 +24,9 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
     const [isSpeaking, setIsSpeaking] = useState(false)
     const [stream, setStream] = useState<MediaStream | null>(null)
 
-    // Initialize language from localStorage (sync with LanguageSelector)
-    const getInitialLanguage = (): LanguageOption => {
-        if (typeof window !== 'undefined') {
-            const STORAGE_KEY = 'hai-voice-language'
-            const stored = localStorage.getItem(STORAGE_KEY)
-            if (stored) {
-                const found = SUPPORTED_LANGUAGES.find(lang => lang.code === stored)
-                if (found) {
-                    console.log('[useTurnByTurn] Initialized with language from storage:', found.code)
-                    return found
-                }
-            }
-        }
-        return SUPPORTED_LANGUAGES[0]
-    }
-
-    const [selectedLanguage, setSelectedLanguage] = useState<LanguageOption>(getInitialLanguage)
+    // Language is hardcoded to English for now
+    // TODO: Implement auto-detection and translation later
+    const language = 'en-US'
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
@@ -143,6 +132,13 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
         if (!audioContextRef.current) return
 
         try {
+            // iOS Safari requires AudioContext to be resumed after user interaction
+            // This fixes the issue where audio doesn't play after the first time
+            if (audioContextRef.current.state === 'suspended') {
+                console.log('[Audio] Resuming suspended AudioContext (iOS fix)')
+                await audioContextRef.current.resume()
+            }
+
             // Decode base64
             const binaryString = window.atob(base64Audio)
             const len = binaryString.length
@@ -180,6 +176,8 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
             setIsSpeaking(true)
             setState('speaking')
 
+            console.log('[Audio] Playback started successfully')
+
         } catch (err) {
             console.error('Error playing audio:', err)
             setError('Failed to play audio response')
@@ -198,7 +196,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
 
             const transcribeFormData = new FormData()
             transcribeFormData.append('audio', audioBlob)
-            transcribeFormData.append('language', selectedLanguage.code)
+            transcribeFormData.append('language', language)  // Always English for now
 
             transcribeAbortRef.current = new AbortController()
 
@@ -223,7 +221,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
             options.onTranscript?.(transcript)
 
             // Step 2: Get AI Response
-            console.log('[useTurnByTurn] Calling /api/conversation/turn with language:', selectedLanguage.code)
+            console.log('[useTurnByTurn] Calling /api/conversation/turn with language:', language)
             aiAbortRef.current = new AbortController()
 
             const turnRes = await fetch('/api/conversation/turn', {
@@ -234,7 +232,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
                 credentials: 'include',  // Include cookies for auth
                 body: JSON.stringify({
                     message: transcript,
-                    language: selectedLanguage.code,
+                    language: language,  // Always English
                     threadId: options.threadId,
                 }),
                 signal: aiAbortRef.current.signal,
@@ -274,7 +272,7 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
             transcribeAbortRef.current = null
             aiAbortRef.current = null
         }
-    }, [selectedLanguage.code, options, playAudio])
+    }, [language, options, playAudio])
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -320,10 +318,10 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
         }
     }, [stopAudio])
 
-    // Debug: Log when language changes
+    // Language is fixed to English
     useEffect(() => {
-        console.log('[useTurnByTurn] Language changed to:', selectedLanguage.code, selectedLanguage.name)
-    }, [selectedLanguage])
+        console.log('[useTurnByTurn] Using language:', language)
+    }, [language])
 
     return {
         state,
@@ -336,7 +334,5 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
         stopRecording,
         stopAudio,
         stopAll,  // New: stop everything
-        selectedLanguage,
-        setSelectedLanguage
     }
 }
