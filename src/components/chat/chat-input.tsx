@@ -33,9 +33,7 @@ export function ChatInput({
   loading,
   streamMode,
   pushToTalkMode,
-  turnByTurnMode = false,
   isTTSPlaying,
-  onStopTTS,
   onPhotoSelect,
   onDocumentSelect,
 }: ChatInputProps) {

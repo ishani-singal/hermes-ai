@@ -61,8 +61,17 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
   const [streamMode, setStreamMode] = useState(false)
+  const streamModeRef = useRef(false)
   const [pushToTalkMode, setPushToTalkMode] = useState(false)
   const isAutoRestarting = useRef(false)
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false)
+
+
+  // Audio playback refs (for mobile compatibility)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const currentAudioElementRef = useRef<HTMLAudioElement | null>(null)
+  const audioUnlockedRef = useRef(false)
 
   // Voice Factory Hook (handles both Web Speech and Turn-by-Turn)
   const {
@@ -70,11 +79,9 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     error: voiceError,
     start,
     stop,
-    stopAudio,
     stopAll,
     isRecording,
     isProcessing,
-    isSpeaking,
     stream,
     partial,
   } = useVoiceFactory({
@@ -145,6 +152,163 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     autoContinue: true,
     threadId: threadId
   })
+
+  // Initialize AudioContext for mobile-friendly audio playback
+  useEffect(() => {
+    const AudioContextClass = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (AudioContextClass && !audioContextRef.current) {
+      audioContextRef.current = new AudioContextClass()
+    }
+    return () => {
+      if (audioContextRef.current?.state !== 'closed') {
+        audioContextRef.current?.close()
+      }
+    }
+  }, [])
+
+  // Unlock audio on first user interaction (required for mobile)
+  useEffect(() => {
+    const unlockAudio = async () => {
+      if (audioContextRef.current && !audioUnlockedRef.current) {
+        try {
+          await audioContextRef.current.resume()
+          audioUnlockedRef.current = true
+          console.log('[Audio] AudioContext unlocked')
+        } catch (e) {
+          console.warn('[Audio] Failed to unlock AudioContext:', e)
+        }
+      }
+    }
+
+    // Listen for any user interaction to unlock audio
+    const events = ['touchstart', 'touchend', 'mousedown', 'keydown']
+    events.forEach(event => {
+      document.addEventListener(event, unlockAudio, { once: true })
+    })
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, unlockAudio)
+      })
+    }
+  }, [])
+
+  // Helper: Convert base64 to Blob
+  const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const byteCharacters = atob(base64)
+    const byteNumbers = new Array(byteCharacters.length)
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i)
+    }
+    const byteArray = new Uint8Array(byteNumbers)
+    return new Blob([byteArray], { type: mimeType })
+  }
+
+  // Helper: Play audio blob using Web Audio API (mobile-friendly) with HTML5 fallback
+  const playAudioBlob = async (blob: Blob): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      setIsTTSPlaying(true)
+
+      // Try AudioContext first (better for mobile when unlocked)
+      if (audioUnlockedRef.current && audioContextRef.current) {
+        blob.arrayBuffer()
+          .then(arrayBuffer => audioContextRef.current!.decodeAudioData(arrayBuffer))
+          .then(audioBuffer => {
+            const source = audioContextRef.current!.createBufferSource()
+            source.buffer = audioBuffer
+            source.connect(audioContextRef.current!.destination)
+
+            currentAudioSourceRef.current = source
+
+            source.onended = () => {
+              currentAudioSourceRef.current = null
+              setIsTTSPlaying(false)
+              resolve()
+            }
+
+            source.start(0)
+          })
+          .catch(err => {
+            console.warn('[Audio] AudioContext playback failed, trying HTML5 Audio fallback:', err)
+            // Fallback to HTML5 Audio
+            playAudioFallback(blob, resolve, reject)
+          })
+      } else {
+        // AudioContext not ready, use HTML5 Audio fallback
+        console.log('[Audio] AudioContext not unlocked, using HTML5 Audio')
+        playAudioFallback(blob, resolve, reject)
+      }
+    })
+  }
+
+  // Fallback: Play audio using HTML5 Audio element
+  const playAudioFallback = (blob: Blob, resolve: () => void, reject: (err: unknown) => void) => {
+    const audioUrl = URL.createObjectURL(blob)
+    const audio = new Audio(audioUrl)
+    currentAudioElementRef.current = audio
+
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl)
+      currentAudioElementRef.current = null
+      setIsTTSPlaying(false)
+      resolve()
+    }
+
+    audio.onerror = (e) => {
+      URL.revokeObjectURL(audioUrl)
+      currentAudioElementRef.current = null
+      setIsTTSPlaying(false)
+      reject(e)
+    }
+
+    audio.play().catch(err => {
+      URL.revokeObjectURL(audioUrl)
+      currentAudioElementRef.current = null
+      setIsTTSPlaying(false)
+      reject(err)
+    })
+  }
+
+  // Helper: Stop TTS playback
+  const handleStopTTS = async () => {
+    streamModeRef.current = false
+    // Stop recording FIRST if it's active (before changing streamMode)
+    if (isRecording) {
+      await stop()
+    }
+
+    // Stop AudioContext source if it exists
+    if (currentAudioSourceRef.current) {
+      try {
+        currentAudioSourceRef.current.stop()
+      } catch {
+        // ignore if already stopped
+      }
+      currentAudioSourceRef.current = null
+    }
+
+    // Stop HTML5 Audio if it exists
+    if (currentAudioElementRef.current) {
+      try {
+        currentAudioElementRef.current.pause()
+        currentAudioElementRef.current.currentTime = 0
+      } catch {
+        // ignore error
+      }
+      currentAudioElementRef.current = null
+    }
+
+    // Always reset TTS playing state (handles both AudioContext and HTML5 Audio)
+    setIsTTSPlaying(false)
+
+    // Reset stream mode states
+    if (streamMode) {
+      setStreamMode(false)
+      setPushToTalkMode(false)
+    }
+
+    setLoading(false)
+  }
 
   // Effect to scroll to bottom
   useEffect(() => {
@@ -233,24 +397,47 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       setMessages((m) => [...m, assistantMessage])
 
+      // Clear loading state immediately - we have the response
+      setLoading(false)
+
       // If we have audio response and we are in web-speech mode (or just requested voice), play it
       if (json?.assistant?.audioBase64) {
-        const audio = new Audio(`data:audio/mp3;base64,${json.assistant.audioBase64}`)
+        try {
+          const audioBlob = base64ToBlob(json.assistant.audioBase64, 'audio/mpeg')
 
-        audio.onended = async () => {
-          if (VOICE_MODE === 'web-speech' && isVoice && streamMode) {
+          await playAudioBlob(audioBlob)
+
+          // After audio ends, try to restart listening if in stream mode
+          if (VOICE_MODE === 'web-speech' && isVoice && streamModeRef.current) {
             console.log('Audio ended, waiting before restarting listening...')
             // Add delay to prevent recording the tail of the audio/echo
             setTimeout(async () => {
-              isAutoRestarting.current = true
-              await start()
-              // Reset flag after a short delay to allow error effect to process if needed
-              setTimeout(() => { isAutoRestarting.current = false }, 1000)
+              try {
+                isAutoRestarting.current = true
+                await start()
+                // Reset flag after a short delay to allow error effect to process if needed
+                setTimeout(() => { isAutoRestarting.current = false }, 1000)
+              } catch (restartErr) {
+                // Gracefully handle restart failure (e.g., iOS mic permission issues)
+                console.warn('Failed to restart listening after TTS, exiting stream mode:', restartErr)
+                streamModeRef.current = false
+                setStreamMode(false)
+                setPushToTalkMode(false)
+                isAutoRestarting.current = false
+              }
             }, 500)
           }
+        } catch (audioErr) {
+          // Gracefully handle audio playback failure
+          console.warn('Audio playback failed:', audioErr)
+          // If in stream mode and audio failed, exit gracefully
+          if (streamMode) {
+            console.log('Audio playback failed in stream mode, exiting gracefully')
+            streamModeRef.current = false
+            setStreamMode(false)
+            setPushToTalkMode(false)
+          }
         }
-
-        audio.play().catch(e => console.error('Failed to play audio response:', e))
       }
 
     } catch (err: unknown) {
@@ -263,7 +450,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
           text: 'Sorry — something went wrong. ' + (err instanceof Error ? err.message : ''),
         },
       ])
-    } finally {
       setLoading(false)
     }
   }
@@ -282,6 +468,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     } else {
       // If stream mode is active, stop it first
       if (streamMode) {
+        streamModeRef.current = false
         setStreamMode(false)
         stop()
         return
@@ -292,7 +479,14 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
   }
 
   const handleTurnByTurnClick = () => {
+    if (isTTSPlaying || loading) {
+      streamModeRef.current = false
+      void handleStopTTS()
+      return
+    }
+
     if (streamMode && isRecording) {
+      streamModeRef.current = false
       setStreamMode(false)
       stopAll()
     } else {
@@ -300,6 +494,7 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       if (pushToTalkMode) {
         setPushToTalkMode(false)
       }
+      streamModeRef.current = true
       setStreamMode(true)
       void start()
     }
@@ -664,8 +859,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             streamMode={streamMode}
             pushToTalkMode={pushToTalkMode}
             turnByTurnMode={true}
-            isTTSPlaying={isSpeaking}
-            onStopTTS={stopAll}  // Use stopAll to stop everything
+            isTTSPlaying={isTTSPlaying}
+            onStopTTS={handleStopTTS}
             onPhotoSelect={handlePhotoSelect}
             onDocumentSelect={handleDocumentSelect}
           />
