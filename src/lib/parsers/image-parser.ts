@@ -5,7 +5,7 @@
  * Provides rich descriptions for maintenance and troubleshooting context.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiClient } from '@/lib/ai/gemini-client';
 
 /**
  * Image Analysis Result Interface
@@ -21,19 +21,6 @@ export interface ImageAnalysisResult {
   damageIndicators: string[];
   /** Technical observations (gauges, measurements, conditions) */
   observations: string[];
-}
-
-/**
- * Initialize Gemini client
- */
-function getGeminiClient() {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not configured');
-  }
-
-  return new GoogleGenerativeAI(apiKey);
 }
 
 /**

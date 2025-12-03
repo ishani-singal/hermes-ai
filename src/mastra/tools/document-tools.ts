@@ -10,8 +10,7 @@ import { z } from 'zod';
 import { parsePDF } from '@/lib/parsers/pdf-parser';
 import { summarizeDocument } from '@/lib/parsers/pdf-summarizer';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { contentQueue } from '@/lib/queue/simple-queue';
-import type { IndexContentParams } from '@/mastra/services/rag-service';
+import type { ExtractedEquipmentInfo } from '@/types/document';
 
 /**
  * Analyze a document with PDF parsing and AI summarization
@@ -128,11 +127,11 @@ export const analyzeDocumentTool = createTool({
         };
       }
       
-      // Update status to 'processing' (analysis phase)
+      // Update status to 'analyzing' (analysis phase)
       await supabase
         .from('files')
         .update({ 
-          processing_status: 'processing',
+          processing_status: 'analyzing',
           metadata: {
             ...document.metadata,
             processing_phase: 'document_analysis',
@@ -170,7 +169,7 @@ export const analyzeDocumentTool = createTool({
       const { error: updateError } = await supabase
         .from('files')
         .update({
-          processing_status: 'processing', // Keep as processing, RAG will complete it
+          processing_status: 'indexing', // Analysis complete, queued for RAG indexing
           metadata: {
             ...document.metadata,
             processing_phase: 'analysis_complete',
@@ -321,6 +320,247 @@ export const patchDocumentTool = createTool({
         success: false,
         documentId,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  },
+});
+
+/**
+ * Extract Equipment Info Tool
+ * Retrieves extracted equipment information from a recently uploaded document
+ * and prompts the user to create equipment, work order, or troubleshooting guide
+ */
+export const extractEquipmentInfoTool = createTool({
+  id: 'extract-equipment-info-tool',
+  description: `Get equipment information that was automatically extracted from a document during upload.
+  
+  Use this when:
+  - User has just uploaded a document and wants to create equipment from it
+  - User asks "what equipment is in this document?"
+  - User wants to create equipment, work order, or troubleshooting guide from a document
+  - You need to check if a document contains equipment information
+  
+  This tool reads the pre-extracted equipment info (manufacturer, model, type, etc.)
+  that was populated during document upload. It does NOT re-analyze the document.
+  
+  After getting the info, ask the user what they want to create:
+  - Equipment record (use create-eq-tool with the extracted info)
+  - Work order for this equipment
+  - Troubleshooting guide
+  
+  Returns:
+  - Document details and processing status
+  - Extracted equipment info (if available)
+  - AI summary of the document`,
+  
+  inputSchema: z.object({
+    documentId: z.string().describe('The UUID or display_id of the document (e.g., "DOC-ACME-0001")'),
+  }),
+  
+  outputSchema: z.object({
+    success: z.boolean(),
+    documentId: z.string(),
+    displayId: z.string().optional(),
+    title: z.string().optional(),
+    status: z.string().optional(),
+    summary: z.string().optional(),
+    extractedEquipment: z.object({
+      name: z.string().optional(),
+      manufacturer: z.string().optional(),
+      model: z.string().optional(),
+      type: z.string().optional(),
+      serial_number: z.string().optional(),
+      confidence: z.enum(['high', 'medium', 'low']),
+    }).nullable().optional(),
+    canCreateEquipment: z.boolean().optional(),
+    processingMessage: z.string().optional(),
+    error: z.string().optional(),
+  }),
+  
+  execute: async ({ context, runtimeContext }) => {
+    const { documentId } = context;
+    
+    console.log('[ExtractEquipmentInfoTool] Getting equipment info from document:', documentId);
+    
+    // Get company ID from runtime context
+    let companyId = runtimeContext.get('companyId') as string;
+    
+    if (!companyId) {
+      const ctx = runtimeContext as unknown as { companyId?: string; contextData?: { companyId?: string } };
+      companyId = ctx.companyId || ctx.contextData?.companyId || '';
+    }
+    
+    if (!companyId) {
+      return {
+        success: false,
+        documentId,
+        error: 'Company ID not found in context',
+      };
+    }
+    
+    try {
+      const supabase = createServiceRoleClient();
+      
+      // Fetch document from database
+      let query = supabase
+        .from('files')
+        .select('id, file_name, description, processing_status, metadata')
+        .eq('company_id', companyId)
+        .eq('bucket_id', 'documents');
+      
+      // Support both UUID and display_id
+      if (documentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        query = query.eq('id', documentId);
+      } else {
+        query = query.eq('metadata->>display_id', documentId);
+      }
+      
+      const { data: document, error: fetchError } = await query.maybeSingle();
+      
+      if (fetchError || !document) {
+        return {
+          success: false,
+          documentId,
+          error: 'Document not found or does not belong to your company',
+        };
+      }
+      
+      const metadata = document.metadata || {};
+      const status = document.processing_status;
+      const extractedEquipment = metadata.extracted_equipment_info as ExtractedEquipmentInfo | null;
+      const summary = metadata.ai_summary as string | undefined;
+      
+      // Build processing message based on status
+      let processingMessage: string | undefined;
+      if (status === 'analyzing') {
+        processingMessage = 'The document is still being analyzed. Equipment information will be available shortly.';
+      } else if (status === 'indexing') {
+        processingMessage = 'I have the summary and equipment info, but the document is still being indexed for detailed search. You can create equipment now, but detailed questions about the document content may not work yet.';
+      } else if (status === 'failed') {
+        processingMessage = 'Document processing failed. You can try re-uploading the document.';
+      }
+      
+      // Determine if we can create equipment
+      const canCreateEquipment = !!extractedEquipment && 
+        (!!extractedEquipment.name || !!extractedEquipment.manufacturer || !!extractedEquipment.model);
+      
+      console.log('[ExtractEquipmentInfoTool] Found document:', {
+        status,
+        hasEquipment: !!extractedEquipment,
+        hasSummary: !!summary,
+        canCreateEquipment,
+      });
+      
+      return {
+        success: true,
+        documentId: document.id,
+        displayId: metadata.display_id,
+        title: document.description || document.file_name,
+        status,
+        summary,
+        extractedEquipment: extractedEquipment || null,
+        canCreateEquipment,
+        processingMessage,
+      };
+      
+    } catch (error) {
+      console.error('[ExtractEquipmentInfoTool] Error:', error);
+      return {
+        success: false,
+        documentId,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  },
+});
+
+/**
+ * Get Document Status Tool
+ * Quick check on document processing status - useful for agent to know
+ * if it can answer detailed questions about a document
+ */
+export const getDocumentStatusTool = createTool({
+  id: 'get-document-status-tool',
+  description: `Check the processing status of a document.
+  
+  Use this when:
+  - User asks a detailed question about a document that may still be processing
+  - You need to know if RAG search will work for this document
+  - Before attempting to answer complex questions about document content
+  
+  Status meanings:
+  - 'uploaded': Just uploaded, processing hasn't started
+  - 'analyzing': AI is extracting summary and equipment info
+  - 'indexing': Being indexed for search (summary available, detailed search not yet)
+  - 'ready': Fully processed, all features available
+  - 'failed': Processing failed
+  
+  If status is not 'ready', inform the user that detailed answers may be limited.`,
+  
+  inputSchema: z.object({
+    documentId: z.string().describe('The UUID or display_id of the document'),
+  }),
+  
+  outputSchema: z.object({
+    success: z.boolean(),
+    documentId: z.string(),
+    status: z.string().optional(),
+    hasSummary: z.boolean().optional(),
+    hasEquipmentInfo: z.boolean().optional(),
+    isReady: z.boolean().optional(),
+    error: z.string().optional(),
+  }),
+  
+  execute: async ({ context, runtimeContext }) => {
+    const { documentId } = context;
+    
+    let companyId = runtimeContext.get('companyId') as string;
+    if (!companyId) {
+      const ctx = runtimeContext as unknown as { companyId?: string; contextData?: { companyId?: string } };
+      companyId = ctx.companyId || ctx.contextData?.companyId || '';
+    }
+    
+    if (!companyId) {
+      return { success: false, documentId, error: 'Company ID not found' };
+    }
+    
+    try {
+      const supabase = createServiceRoleClient();
+      
+      let query = supabase
+        .from('files')
+        .select('id, processing_status, metadata')
+        .eq('company_id', companyId)
+        .eq('bucket_id', 'documents');
+      
+      if (documentId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        query = query.eq('id', documentId);
+      } else {
+        query = query.eq('metadata->>display_id', documentId);
+      }
+      
+      const { data: document, error } = await query.maybeSingle();
+      
+      if (error || !document) {
+        return { success: false, documentId, error: 'Document not found' };
+      }
+      
+      const metadata = document.metadata || {};
+      
+      return {
+        success: true,
+        documentId: document.id,
+        status: document.processing_status,
+        hasSummary: !!metadata.ai_summary,
+        hasEquipmentInfo: !!metadata.extracted_equipment_info,
+        isReady: document.processing_status === 'ready',
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        documentId,
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   },

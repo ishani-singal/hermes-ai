@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { ProgressBar } from '@/components/ui/progress-bar'
-import { Upload, X } from 'lucide-react'
+import { Upload, X, FileText, AlertCircle } from 'lucide-react'
 import { Equipment, WorkOrder } from '@/types'
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file
 
 export interface DocumentUploadFormProps {
   open: boolean
@@ -99,15 +101,28 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setSelectedFile(file)
-      // Suggest title based on file name if not already set
-      if (!formData.title) {
-        setFormData(prev => ({
-          ...prev,
-          title: file.name.replace(/\.[^/.]+$/, '')
-        }))
-      }
+    if (!file) return
+
+    setError(null)
+
+    if (file.size > MAX_FILE_SIZE) {
+      setError('File is too large. Maximum size is 10MB.')
+      return
+    }
+
+    if (file.type !== 'application/pdf') {
+      setError('Only PDF files are supported.')
+      return
+    }
+
+    setSelectedFile(file)
+    
+    // Auto-set title from filename if empty
+    if (!formData.title) {
+      setFormData(prev => ({
+        ...prev,
+        title: file.name.replace(/\.[^/.]+$/, '')
+      }))
     }
   }
 
@@ -127,7 +142,7 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
 
     setIsSubmitting(true)
     setError(null)
-    setUploadProgress(0)
+    setUploadProgress(10)
 
     try {
       const docFormData = new FormData()
@@ -141,13 +156,10 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
       if (formData.workOrderId) {
         docFormData.append('work_order_id', formData.workOrderId)
       }
-      if (formData.description?.trim()) {
-        docFormData.append('description', formData.description.trim())
-      }
 
-      // Simulate progress for better UX
+      // Simulate progress
       const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + Math.random() * 30, 90))
+        setUploadProgress(prev => Math.min(prev + Math.random() * 20, 90))
       }, 500)
 
       const response = await fetch('/api/documents', {
@@ -156,24 +168,16 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
       })
 
       clearInterval(progressInterval)
-      setUploadProgress(100)
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || 'Failed to upload document')
       }
 
+      setUploadProgress(100)
+
       // Reset form
-      setFormData({
-        title: '',
-        type: 'manual',
-        scope: 'company',
-        equipmentId: '',
-        workOrderId: '',
-        description: '',
-      })
-      setSelectedFile(null)
-      setErrors({})
+      resetForm()
 
       // Close dialog and notify parent
       onOpenChange(false)
@@ -186,20 +190,27 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
     }
   }
 
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      type: 'manual',
+      scope: 'company',
+      equipmentId: '',
+      workOrderId: '',
+      description: '',
+    })
+    setSelectedFile(null)
+    setErrors({})
+    setError(null)
+    setUploadProgress(0)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
   const handleCancel = () => {
     if (!isSubmitting) {
-      setFormData({
-        title: '',
-        type: 'manual',
-        scope: 'company',
-        equipmentId: '',
-        workOrderId: '',
-        description: '',
-      })
-      setSelectedFile(null)
-      setErrors({})
-      setError(null)
-      setUploadProgress(0)
+      resetForm()
       onOpenChange(false)
     }
   }
@@ -214,7 +225,8 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-red-800">{error}</p>
           </div>
         )}
@@ -309,7 +321,7 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
             </div>
           )}
 
-          {/* Work Order Selector - Optional */}
+          {/* Work Order Selector */}
           <div>
             <label htmlFor="doc-work-order" className="block text-sm font-medium text-gray-700 mb-1">
               Link to Work Order (Optional)
@@ -347,20 +359,18 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
 
           {/* File Input */}
           <div>
-            <label htmlFor="document-file-upload" className="block text-sm font-medium text-gray-700 mb-2">
-              File *
-            </label>
-            <div className="relative">
-              <input
-                id="document-file-upload"
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                disabled={isSubmitting}
-                className="sr-only"
-                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.xlsx,.xls"
-                aria-label="Upload document file"
-              />
+            <input
+              id="document-file-upload"
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileSelect}
+              disabled={isSubmitting}
+              className="sr-only"
+              accept=".pdf"
+              aria-label="Upload document file"
+            />
+            
+            {!selectedFile ? (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -369,42 +379,36 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
                 title="Click to upload document"
               >
                 <Upload className="h-4 w-4 mr-2 text-gray-600" />
-                <span className="text-sm text-gray-600">
-                  {selectedFile ? selectedFile.name : 'Click to upload file'}
-                </span>
+                <span className="text-sm text-gray-600">Click to select a PDF file</span>
               </button>
-            </div>
+            ) : (
+              <div className="p-3 bg-brand/5 border border-brand/30 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <FileText className="h-4 w-4 text-brand flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  disabled={isSubmitting}
+                  className="flex-shrink-0 text-gray-400 hover:text-gray-600 disabled:opacity-50 ml-2"
+                  title="Remove file"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             {errors.file && (
               <p className="mt-1 text-sm text-red-600">{errors.file}</p>
             )}
           </div>
-
-          {/* Selected File Display */}
-          {selectedFile && (
-            <div className="p-3 bg-brand/5 border border-brand/30 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="flex-shrink-0 text-brand">
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8 16.5a.5.5 0 01-.5-.5v-5H5.707l2.147-2.146a.5.5 0 00-.707-.708l-3 3a.5.5 0 000 .708l3 3a.5.5 0 00.707-.708L5.707 11H7.5v5a.5.5 0 01-.5.5z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
-                  <p className="text-xs text-gray-500">{(selectedFile.size / 1024).toFixed(2)} KB</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleRemoveFile}
-                disabled={isSubmitting}
-                className="flex-shrink-0 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                title="Remove file"
-                aria-label="Remove selected file"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
 
           {/* Upload Progress */}
           {isSubmitting && uploadProgress > 0 && (
@@ -418,7 +422,7 @@ export function DocumentUploadForm({ open, onOpenChange, onSuccess }: DocumentUp
           )}
 
           <p className="text-xs text-gray-500">
-            Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF, XLS, XLSX
+            PDF files only. Maximum file size: 10MB.
           </p>
         </div>
 

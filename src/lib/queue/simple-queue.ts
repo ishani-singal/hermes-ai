@@ -203,7 +203,7 @@ export class SimpleQueue<T = unknown> {
 }
 
 // Export singleton instance for unified content processing (documents, photos, videos, etc.)
-import { indexContent, IndexContentParams } from '@/mastra/services/rag-service';
+import { indexContent, IndexContentParams } from '@/mastra/services/rag';
 
 export const contentQueue = new SimpleQueue<IndexContentParams>(
   indexContent,

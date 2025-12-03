@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Grid3x3, List } from 'lucide-react'
+import { Plus, RefreshCw, Grid3x3, List, Files } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ViewMode } from '../types'
 
@@ -9,9 +9,11 @@ interface FileListHeaderProps {
     onViewModeChange?: (mode: ViewMode) => void
     onRefresh: () => void
     onCreateClick: () => void
+    onBulkUploadClick?: () => void
     isRefreshing: boolean
     canCreate: boolean
     createButtonText: string
+    bulkUploadButtonText?: string
 }
 
 export function FileListHeader({
@@ -21,9 +23,11 @@ export function FileListHeader({
     onViewModeChange,
     onRefresh,
     onCreateClick,
+    onBulkUploadClick,
     isRefreshing,
     canCreate,
     createButtonText,
+    bulkUploadButtonText,
 }: FileListHeaderProps) {
     return (
         <div className="flex items-center justify-between mb-4">
@@ -71,6 +75,14 @@ export function FileListHeader({
                 >
                     <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 </Button>
+
+                {canCreate && onBulkUploadClick && (
+                    <Button size="sm" variant="outline" onClick={onBulkUploadClick}>
+                        <Files className="h-4 w-4 mr-1" />
+                        <span className="hidden sm:inline">{bulkUploadButtonText || 'Bulk Upload'}</span>
+                        <span className="sm:hidden">Bulk</span>
+                    </Button>
+                )}
 
                 {canCreate && (
                     <Button size="sm" onClick={onCreateClick}>

@@ -7,6 +7,12 @@
  * - List: All authenticated users can view their company's documents
  * 
  * Note: Document upload includes file handling to Supabase Storage
+ * 
+ * Processing Flow:
+ * 1. Upload file to storage (status: uploaded)
+ * 2. Immediately trigger AI analysis (status: analyzing)
+ * 3. Queue for RAG indexing (status: indexing)
+ * 4. Complete (status: ready)
  */
 
 import { NextRequest } from 'next/server';
@@ -14,7 +20,6 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, forbidden } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
-import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
 import type {
   Document,
   DocumentListFilters,
@@ -24,7 +29,9 @@ import type {
   DocumentStatus,
 } from '@/types';
 import { contentQueue } from '@/lib/queue/simple-queue';
-import type { IndexContentParams } from '@/mastra/services/rag-service';
+import type { IndexContentParams } from '@/mastra/services/rag';
+import { parsePDF } from '@/lib/parsers/pdf-parser';
+import { analyzeDocumentWithExtraction } from '@/lib/parsers/pdf-summarizer';
 
 // =============================================
 // GET - List Documents
@@ -386,46 +393,107 @@ export const POST = route()
       }
     }
 
-    // Queue for background RAG indexing with delay
-    // Delay allows time for agent to add metadata (equipment/work order links, AI summary)
-    // before indexing, reducing the need for re-indexing
+    // =============================================
+    // IMMEDIATE DOCUMENT ANALYSIS
+    // =============================================
+    // Step 1: Update status to 'analyzing' and start AI analysis immediately
+    // This extracts summary + equipment info for quick access
+    // Step 2: Queue for RAG indexing (status: 'indexing')
+    // Step 3: RAG service will update to 'ready' when complete
+    
+    let currentStatus: DocumentStatus = 'uploaded';
+    let analysisResult: Awaited<ReturnType<typeof analyzeDocumentWithExtraction>> | null = null;
+    
     try {
-      const ragQueuedAt = new Date();
-      
-      // Update metadata to track RAG queue status
+      // Update status to analyzing
       await supabase
         .from('files')
         .update({
+          processing_status: 'analyzing',
           metadata: {
             ...fileRecord.metadata,
-            processing_phase: 'rag_queued',
-            rag_queued_at: ragQueuedAt.toISOString(),
+            processing_phase: 'ai_analysis',
+            analysis_started_at: new Date().toISOString(),
           },
         })
         .eq('id', fileRecord.id);
       
+      currentStatus = 'analyzing';
+      console.log(`[Upload] Starting AI analysis for document: ${fileRecord.id}`);
+      
+      // Parse PDF and analyze with equipment extraction
+      const pdfText = await parsePDF(urlData.publicUrl);
+      analysisResult = await analyzeDocumentWithExtraction(pdfText, uploadedFile.name);
+      
+      console.log(`[Upload] AI analysis complete for document: ${fileRecord.id}`, {
+        hasEquipment: !!analysisResult.extractedEquipment,
+        confidence: analysisResult.extractedEquipment?.confidence,
+        wasSmartTruncated: analysisResult.wasSmartTruncated,
+      });
+      
+      // Update with analysis results and transition to 'indexing'
+      await supabase
+        .from('files')
+        .update({
+          processing_status: 'indexing',
+          metadata: {
+            ...fileRecord.metadata,
+            document_type: analysisResult.documentType || type,
+            ai_summary: analysisResult.summary,
+            extracted_equipment_info: analysisResult.extractedEquipment,
+            was_smart_truncated: analysisResult.wasSmartTruncated,
+            analysis_completed_at: new Date().toISOString(),
+            processing_phase: 'rag_indexing',
+          },
+        })
+        .eq('id', fileRecord.id);
+      
+      currentStatus = 'indexing';
+      
+    } catch (analysisError) {
+      console.error('[Upload] AI analysis failed:', analysisError);
+      // Analysis failed but we can still index - update metadata and continue
+      await supabase
+        .from('files')
+        .update({
+          processing_status: 'indexing',
+          metadata: {
+            ...fileRecord.metadata,
+            processing_phase: 'rag_indexing',
+            analysis_error: analysisError instanceof Error ? analysisError.message : 'Unknown error',
+          },
+        })
+        .eq('id', fileRecord.id);
+      
+      currentStatus = 'indexing';
+    }
+    
+    // Queue for RAG indexing (no delay - immediate processing)
+    try {
       const processingParams: IndexContentParams = {
         type: 'document',
         resourceId: fileRecord.id,
         companyId: user!.companyId,
         fileUrl: fileRecord.file_url,
         documentTitle: fileRecord.description || fileRecord.file_name,
-        documentType: type,
+        documentType: analysisResult?.documentType || type,
         scope: scope,
         metadata: {
           equipment_id: validatedEquipmentId || undefined,
           equipment_name: equipmentName,
           work_order_id: validatedWorkOrderId || undefined,
           work_order_title: workOrderTitle,
+          ai_summary: analysisResult?.summary,
+          extracted_equipment_info: analysisResult?.extractedEquipment,
         },
       };
 
-      // Queue with configurable delay (default 10 minutes)
-      await contentQueue.add(processingParams, `doc-${fileRecord.id}`, RAG_INDEX_DELAY_MS);
-      console.log(`[Upload] Document queued for RAG indexing (delay: ${RAG_INDEX_DELAY_MS}ms): ${fileRecord.id}`);
+      // Queue immediately (no delay)
+      await contentQueue.add(processingParams, `doc-${fileRecord.id}`);
+      console.log(`[Upload] Document queued for RAG indexing: ${fileRecord.id}`);
     } catch (error) {
       console.error('[Upload] Failed to queue document for RAG indexing:', error);
-      // Don't fail the upload - document is uploaded and accessible, indexing can be retried
+      // Don't fail the upload - document is uploaded and analyzed, indexing can be retried
     }
 
     // Construct response matching Document interface
@@ -433,20 +501,18 @@ export const POST = route()
       id: fileRecord.id,
       company_id: fileRecord.company_id,
       equipment_id: validatedEquipmentId || undefined,
-      display_id: fileRecord.metadata?.display_id || fileRecord.id, // Trigger might have added it, but we might need to re-fetch to get it. 
-      // Since we selected *, if the trigger ran BEFORE return, we might have it. 
-      // But triggers usually run on DB side. The returned data from .insert().select() *should* include trigger updates if it's BEFORE INSERT.
+      display_id: fileRecord.metadata?.display_id || fileRecord.id,
       title: fileRecord.description,
-      type: type,
+      type: analysisResult?.documentType as DocumentType || type,
       scope: scope,
       file_url: fileRecord.file_url,
       file_size: fileRecord.file_size,
-      status: 'uploaded',
+      status: currentStatus,
       created_at: fileRecord.created_at,
       updated_at: fileRecord.updated_at,
       equipment: validatedEquipmentId ? {
         id: validatedEquipmentId,
-        display_id: '', // We don't have this handy without another query, but frontend might not need it immediately
+        display_id: '',
         name: equipmentName || ''
       } : undefined
     };

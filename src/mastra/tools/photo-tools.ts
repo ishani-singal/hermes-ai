@@ -233,11 +233,11 @@ export const analyzePhotoTool = createTool({
         };
       }
       
-      // Update status to 'processing' (vision analysis phase)
+      // Update status to 'analyzing' (vision analysis phase)
       await supabase
         .from('files')
         .update({ 
-          processing_status: 'processing',
+          processing_status: 'analyzing',
           metadata: {
             ...photo.metadata,
             processing_phase: 'vision_analysis',

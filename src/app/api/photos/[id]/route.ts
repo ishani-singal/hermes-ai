@@ -18,7 +18,7 @@ import { route, type RouteContext } from '@/lib/auth/route-builder';
 import { success, badRequest, forbidden, notFound } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
 import { contentQueue } from '@/lib/queue/simple-queue';
-import type { IndexContentParams } from '@/mastra/services/rag-service';
+import type { IndexContentParams } from '@/mastra/services/rag';
 import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
 
 export const PATCH = route()

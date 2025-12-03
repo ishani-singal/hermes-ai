@@ -4,9 +4,21 @@
 
 export type DocumentType = 'manual' | 'safety' | 'sop' | 'troubleshooting' | 'other';
 export type DocumentScope = 'company' | 'equipment';
-// Document status tracks upload/storage status only
-// RAG indexing happens in background and doesn't affect document availability
-export type DocumentStatus = 'uploaded' | 'failed';
+// Document status tracks the full processing lifecycle:
+// uploaded -> analyzing (AI summary) -> indexing (RAG) -> ready
+export type DocumentStatus = 'uploaded' | 'analyzing' | 'indexing' | 'ready' | 'failed';
+
+/**
+ * Extracted equipment information from document analysis
+ */
+export interface ExtractedEquipmentInfo {
+  name?: string;
+  manufacturer?: string;
+  model?: string;
+  type?: string;
+  serial_number?: string;
+  confidence: 'high' | 'medium' | 'low';
+}
 
 export interface Document {
   id: string;

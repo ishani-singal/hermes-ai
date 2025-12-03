@@ -549,9 +549,9 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       // Remove photo from attachment area - it's now in the chat
       setPhotos(prev => prev.filter(p => p.id !== id))
 
-      // Auto-send message to agent with photo reference (silently)
+      // Auto-send message to agent with photo reference - triggers full analysis workflow
       const photoRef = displayId || photoId
-      const message = `I uploaded a photo (${photoRef}). Can you analyze it and tell me what you see?`
+      const message = `I uploaded a photo (${photoRef}). Please: 1) Analyze what's in the image, 2) Check if any existing equipment or work orders match, 3) If no match, suggest whether to create equipment or a work order based on what you see, and 4) Recommend what details to include.`
 
       // Call agent to analyze
       setLoading(true)
@@ -681,8 +681,8 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
       setMessages((m) => [...m, analyzingMessage])
 
-      // Auto-send message to agent to analyze document (mirror photo pattern)
-      const message = `I uploaded a document "${file.name}" (${docRef}). Can you analyze it and tell me what it contains?`
+      // Auto-send message to agent - triggers full document analysis workflow
+      const message = `I uploaded a document "${file.name}" (${docRef}). Please: 1) Summarize the document, 2) Check if any existing equipment or work orders match, 3) If no match, suggest whether to create equipment or a work order based on the content, and 4) Recommend what details to include.`
 
       // Call agent to analyze
       setLoading(true)

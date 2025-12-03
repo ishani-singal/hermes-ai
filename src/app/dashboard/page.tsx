@@ -11,8 +11,10 @@ import { EquipmentCreateForm } from '@/components/equipment/equipment-create-for
 import { EquipmentDetail } from '@/components/equipment/equipment-detail'
 import { DocumentList } from '@/components/documents/document-list'
 import { DocumentUploadForm } from '@/components/documents/document-upload-form'
+import { DocumentBulkUploadForm } from '@/components/documents/document-bulk-upload-form'
 import { PhotoList } from '@/components/photos/photo-list'
 import { PhotoUploadForm } from '@/components/photos/photo-upload-form'
+import { PhotoBulkUploadForm } from '@/components/photos/photo-bulk-upload-form'
 import { SideNav } from '@/components/navigation/side-nav'
 import { MessageCircle, ClipboardList, Wrench, Database, FileText, Image } from 'lucide-react'
 import { Tabs } from '@/components/tabs/tab-navigation'
@@ -35,10 +37,12 @@ export default function DashboardPage() {
 
   // Document state
   const [isUploadDocumentOpen, setIsUploadDocumentOpen] = useState(false)
+  const [isBulkUploadDocumentOpen, setIsBulkUploadDocumentOpen] = useState(false)
   const [documentRefreshTrigger, setDocumentRefreshTrigger] = useState(0)
 
   // Photo state
   const [isUploadPhotoOpen, setIsUploadPhotoOpen] = useState(false)
+  const [isBulkUploadPhotoOpen, setIsBulkUploadPhotoOpen] = useState(false)
   const [photoRefreshTrigger, setPhotoRefreshTrigger] = useState(0)
   
   // Chat state
@@ -174,6 +178,7 @@ export default function DashboardPage() {
               <DocumentList
                 key={documentRefreshTrigger}
                 onCreateClick={() => setIsUploadDocumentOpen(true)}
+                onBulkUploadClick={() => setIsBulkUploadDocumentOpen(true)}
               />
             )}
             
@@ -181,6 +186,7 @@ export default function DashboardPage() {
               <PhotoList
                 key={photoRefreshTrigger}
                 onCreateClick={() => setIsUploadPhotoOpen(true)}
+                onBulkUploadClick={() => setIsBulkUploadPhotoOpen(true)}
               />
             )}
           </div>
@@ -222,10 +228,22 @@ export default function DashboardPage() {
         onSuccess={handleDocumentUploadSuccess}
       />
 
+      <DocumentBulkUploadForm
+        open={isBulkUploadDocumentOpen}
+        onOpenChange={setIsBulkUploadDocumentOpen}
+        onSuccess={handleDocumentUploadSuccess}
+      />
+
       {/* Photo Modals */}
       <PhotoUploadForm
         open={isUploadPhotoOpen}
         onOpenChange={setIsUploadPhotoOpen}
+        onSuccess={handlePhotoUploadSuccess}
+      />
+
+      <PhotoBulkUploadForm
+        open={isBulkUploadPhotoOpen}
+        onOpenChange={setIsBulkUploadPhotoOpen}
         onSuccess={handlePhotoUploadSuccess}
       />
     </div>

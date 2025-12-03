@@ -94,11 +94,10 @@ export async function POST(req: NextRequest) {
     try {
       const { parseImage } = await import('@/lib/parsers/image-parser');
       const { contentQueue } = await import('@/lib/queue/simple-queue');
-      const { RAG_INDEX_DELAY_MS } = await import('@/lib/config/rag-config');
       
-      // Update status to processing
+      // Update status to analyzing (scene analysis phase)
       await supabase.from('files').update({ 
-        processing_status: 'processing',
+        processing_status: 'analyzing',
         metadata: {
           ...photoFile.metadata,
           processing_phase: 'vision_analysis',
@@ -114,7 +113,7 @@ export async function POST(req: NextRequest) {
         // Update with analysis and queue metadata
         await supabase.from('files').update({
           description: analysisDescription,
-          processing_status: 'processing',
+          processing_status: 'indexing', // Scene analysis complete, queued for RAG
           metadata: {
             ...photoFile.metadata,
             processing_phase: 'rag_queued',
@@ -136,8 +135,8 @@ export async function POST(req: NextRequest) {
           },
         };
 
-        await contentQueue.add(indexParams, `photo-${photoFile.id}`, RAG_INDEX_DELAY_MS);
-        console.log(`[Upload] Photo analyzed and queued for RAG (delay: ${RAG_INDEX_DELAY_MS}ms)`);
+        await contentQueue.add(indexParams, `photo-${photoFile.id}`);
+        console.log(`[Upload] Photo analyzed and queued for immediate RAG indexing`);
       } else {
         await supabase.from('files').update({ processing_status: 'failed' }).eq('id', photoFile.id);
       }

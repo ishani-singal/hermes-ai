@@ -16,9 +16,10 @@ export type Document = DataHubFile
 
 export interface DocumentListProps {
   onCreateClick: () => void
+  onBulkUploadClick?: () => void
 }
 
-export function DocumentList({ onCreateClick }: DocumentListProps) {
+export function DocumentList({ onCreateClick, onBulkUploadClick }: DocumentListProps) {
   const { companies, activeCompanyId } = useAuth()
 
   // Use shared hooks
@@ -120,9 +121,11 @@ export function DocumentList({ onCreateClick }: DocumentListProps) {
         count={documents.length}
         onRefresh={handleRefresh}
         onCreateClick={onCreateClick}
+        onBulkUploadClick={onBulkUploadClick}
         isRefreshing={isRefreshing}
         canCreate={canCreate}
         createButtonText="Upload Document"
+        bulkUploadButtonText="Bulk Upload"
       />
 
       <FileTableView

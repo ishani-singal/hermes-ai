@@ -11,7 +11,7 @@ export interface DataHubFile {
     type?: string // For documents
     link_type?: string // For photos
     scope?: string // For documents
-    status: 'uploaded' | 'processing' | 'ready' | 'failed'
+    status: 'uploaded' | 'analyzing' | 'indexing' | 'ready' | 'failed'
     created_at: string
     updated_at: string
     equipment?: {

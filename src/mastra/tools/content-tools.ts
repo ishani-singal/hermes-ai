@@ -7,7 +7,7 @@
 
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { search, formatContext } from '@/mastra/services/rag-service';
+import { search, formatContext } from '@/mastra/services/rag';
 
 /**
  * Search for relevant documentation and photos

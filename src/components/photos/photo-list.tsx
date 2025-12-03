@@ -19,11 +19,12 @@ export type Photo = DataHubFile
 
 export interface PhotoListProps {
   onCreateClick: () => void
+  onBulkUploadClick?: () => void
   onPhotoClick?: (photo: Photo) => void
   viewMode?: ViewMode
 }
 
-export function PhotoList({ onCreateClick, onPhotoClick, viewMode = 'grid' }: PhotoListProps) {
+export function PhotoList({ onCreateClick, onBulkUploadClick, onPhotoClick, viewMode = 'grid' }: PhotoListProps) {
   const { companies, activeCompanyId } = useAuth()
   const [currentViewMode, setCurrentViewMode] = useState<ViewMode>(viewMode)
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
@@ -149,9 +150,11 @@ export function PhotoList({ onCreateClick, onPhotoClick, viewMode = 'grid' }: Ph
         onViewModeChange={setCurrentViewMode}
         onRefresh={handleRefresh}
         onCreateClick={onCreateClick}
+        onBulkUploadClick={onBulkUploadClick}
         isRefreshing={isRefreshing}
         canCreate={canCreate}
         createButtonText="Upload Photo"
+        bulkUploadButtonText="Bulk Upload"
       />
 
       {currentViewMode === 'grid' ? (

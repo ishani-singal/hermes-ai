@@ -16,8 +16,7 @@ import { success, badRequest, forbidden } from '@/lib/auth/middleware';
 import * as helpers from '@/lib/auth/helpers';
 import { parseImage } from '@/lib/parsers/image-parser';
 import { contentQueue } from '@/lib/queue/simple-queue';
-import type { IndexContentParams } from '@/mastra/services/rag-service';
-import { RAG_INDEX_DELAY_MS } from '@/lib/config/rag-config';
+import type { IndexContentParams } from '@/mastra/services/rag';
 
 // Photo-specific types (matching design doc)
 export type PhotoLinkType = 'before' | 'after' | 'evidence' | 'reference' | 'profile' | 'other';
@@ -32,7 +31,7 @@ export interface Photo {
   file_url: string;
   file_size: number;
   link_type?: PhotoLinkType;
-  status: 'uploaded' | 'processing' | 'ready' | 'failed';
+  status: 'uploaded' | 'analyzing' | 'indexing' | 'ready' | 'failed';
   created_at: string;
   updated_at: string;
   // Optional relations
@@ -388,21 +387,21 @@ export const POST = route()
 
     // Always analyze photos immediately (unified flow for agent and data hub)
     // Backend handles RAG queuing - agent tool only fetches/updates analysis
-    let finalStatus: 'uploaded' | 'processing' | 'ready' | 'failed' = 'uploaded';
+    let finalStatus: 'uploaded' | 'analyzing' | 'indexing' | 'ready' | 'failed' = 'uploaded';
     let finalDescription = fileRecord.description;
 
     console.log(`[Upload] Analyzing photo immediately: ${fileRecord.id}`);
     
     try {
-      // Update status to processing
+      // Update status to analyzing (scene analysis phase)
       await supabase.from('files').update({ 
-        processing_status: 'processing',
+        processing_status: 'analyzing',
         metadata: {
           ...fileRecord.metadata,
           processing_phase: 'vision_analysis',
         },
       }).eq('id', fileRecord.id);
-      finalStatus = 'processing';
+      finalStatus = 'analyzing';
 
       // Call parseImage to analyze the photo
       const analysisDescription = await parseImage(urlData.publicUrl);
@@ -410,11 +409,12 @@ export const POST = route()
       if (analysisDescription) {
         const ragQueuedAt = new Date();
         
-        // Update file record with AI description and RAG queue metadata
+        // Update file record with AI description and transition to indexing status
         finalDescription = analysisDescription;
+        finalStatus = 'indexing';
         await supabase.from('files').update({
           description: analysisDescription,
-          processing_status: 'processing', // Still processing (RAG pending)
+          processing_status: 'indexing', // Scene analysis complete, now queued for RAG
           metadata: {
             ...fileRecord.metadata,
             processing_phase: 'rag_queued',
@@ -440,8 +440,8 @@ export const POST = route()
           },
         };
 
-        await contentQueue.add(indexParams, `photo-${fileRecord.id}`, RAG_INDEX_DELAY_MS);
-        console.log(`[Upload] Photo queued for RAG (delay: ${RAG_INDEX_DELAY_MS}ms): ${fileRecord.id}`);
+        await contentQueue.add(indexParams, `photo-${fileRecord.id}`);
+        console.log(`[Upload] Photo queued for immediate RAG indexing: ${fileRecord.id}`);
         
         // RAG will update status to 'ready' when complete
       } else {

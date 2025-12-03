@@ -45,14 +45,28 @@ export function FileTableView({
 
     const getStatusBadgeVariant = (status: string): 'default' | 'success' | 'warning' | 'danger' | 'info' => {
         const variants: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-            uploaded: 'default', // documents use 'success' for uploaded, photos use 'default'. Let's standardize or keep flexible.
+            uploaded: 'default',
+            analyzing: 'info',
+            indexing: 'warning',
             processing: 'warning',
             ready: 'success',
             failed: 'danger',
         }
         // Override for documents if needed, but 'default' is fine for 'uploaded'
-        if (fileType === 'document' && status === 'uploaded') return 'success'
+        if (fileType === 'document' && status === 'uploaded') return 'info'
         return variants[status] || 'default'
+    }
+
+    const getStatusLabel = (status: string): string => {
+        const labels: Record<string, string> = {
+            uploaded: 'Uploaded',
+            analyzing: 'Analyzing...',
+            indexing: 'Indexing...',
+            processing: 'Processing...',
+            ready: 'Ready',
+            failed: 'Failed',
+        }
+        return labels[status] || status
     }
 
     return (
@@ -135,7 +149,7 @@ export function FileTableView({
                                 </td>
                                 <td className="px-4 py-3">
                                     <Badge variant={getStatusBadgeVariant(file.status)} size="sm">
-                                        {file.status}
+                                        {getStatusLabel(file.status)}
                                     </Badge>
                                 </td>
                                 <td className="px-4 py-3">

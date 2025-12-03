@@ -2,7 +2,9 @@
  * Photo Types
  */
 
-export type PhotoStatus = 'uploaded' | 'processing' | 'ready' | 'failed';
+// Unified status flow matching documents:
+// uploaded -> analyzing (scene analysis/vision) -> indexing (RAG) -> ready
+export type PhotoStatus = 'uploaded' | 'analyzing' | 'indexing' | 'ready' | 'failed';
 
 export type PhotoLinkType = 'profile' | 'reference' | 'before' | 'after' | 'evidence' | 'other';
 
