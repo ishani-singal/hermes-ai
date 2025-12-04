@@ -95,6 +95,7 @@ export const GET = route()
         *,
         equipment_files:equipment_files (
           link_type,
+          equipment_id,
           equipment:equipment (
             id,
             display_id,
@@ -103,6 +104,7 @@ export const GET = route()
         ),
         work_order_files:work_order_files (
           link_type,
+          work_order_id,
           work_order:work_orders (
             id,
             display_id,
@@ -113,14 +115,9 @@ export const GET = route()
       .eq('company_id', user!.companyId)
       .eq('bucket_id', 'photos');
 
-    // Apply filters
-    if (filters.equipment_id) {
-      query = query.eq('equipment_files.equipment_id', filters.equipment_id);
-    }
-
-    if (filters.work_order_id) {
-      query = query.eq('work_order_files.work_order_id', filters.work_order_id);
-    }
+    // Note: We filter by equipment_id/work_order_id after fetching because
+    // Supabase's nested filtering returns parent rows even without matches.
+    // The actual filtering happens in the mapping step below.
 
     if (filters.search) {
       const searchTerm = `%${filters.search}%`;
@@ -148,7 +145,7 @@ export const GET = route()
 
     // Map files to Photo type
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const photos: Photo[] = (data || []).map((file: any) => {
+    let photos: Photo[] = (data || []).map((file: any) => {
       const equipmentLink = file.equipment_files?.[0];
       const workOrderLink = file.work_order_files?.[0];
       const equipment = equipmentLink?.equipment;
@@ -177,9 +174,28 @@ export const GET = route()
           id: workOrder.id,
           display_id: workOrder.display_id,
           title: workOrder.title
-        } : undefined
+        } : undefined,
+        // Include raw link data for filtering
+        _equipmentFileIds: file.equipment_files?.map((ef: { equipment_id: string }) => ef.equipment_id) || [],
+        _workOrderFileIds: file.work_order_files?.map((wf: { work_order_id: string }) => wf.work_order_id) || [],
       };
     });
+
+    // Filter photos to only include those linked to the specified equipment/work order
+    // This is needed because Supabase's nested filtering doesn't exclude parent rows
+    if (filters.equipment_id) {
+      photos = photos.filter((photo: Photo & { _equipmentFileIds?: string[] }) => 
+        photo._equipmentFileIds?.includes(filters.equipment_id!)
+      );
+    }
+    if (filters.work_order_id) {
+      photos = photos.filter((photo: Photo & { _workOrderFileIds?: string[] }) => 
+        photo._workOrderFileIds?.includes(filters.work_order_id!)
+      );
+    }
+
+    // Remove internal filtering properties before returning
+    photos = photos.map(({ _equipmentFileIds, _workOrderFileIds, ...photo }: Photo & { _equipmentFileIds?: string[]; _workOrderFileIds?: string[] }) => photo) as Photo[];
 
     const response: PhotoListResponse = {
       data: photos,

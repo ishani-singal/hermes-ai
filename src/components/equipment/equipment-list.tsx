@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { Equipment, EquipmentListResponse } from '@/types'
 import { EquipmentCard } from './equipment-card'
+import { EquipmentImportExport } from './equipment-import-export'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth/context'
 
@@ -100,13 +101,19 @@ export function EquipmentList({ onCreateClick, onEquipmentClick }: EquipmentList
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Equipment</h3>
           <p className="text-sm text-gray-500 mb-6">
-            Get started by creating your first equipment record.
+            Get started by creating your first equipment record or import from CSV.
           </p>
           {canCreate && (
-            <Button onClick={onCreateClick}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Equipment
-            </Button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Button onClick={onCreateClick}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Equipment
+              </Button>
+              <EquipmentImportExport 
+                onImportSuccess={handleRefresh} 
+                hasEquipment={false}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -125,22 +132,29 @@ export function EquipmentList({ onCreateClick, onEquipmentClick }: EquipmentList
             {equipment.length} {equipment.length === 1 ? 'equipment' : 'equipment'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleRefresh}
             disabled={isRefreshing}
             isLoading={isRefreshing}
+            title="Refresh equipment list"
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
           {canCreate && (
-            <Button size="sm" onClick={onCreateClick}>
-              <Plus className="h-4 w-4 mr-1" />
-              <span className="hidden sm:inline">New Equipment</span>
-              <span className="sm:hidden">New</span>
-            </Button>
+            <>
+              <EquipmentImportExport 
+                onImportSuccess={handleRefresh} 
+                hasEquipment={equipment.length > 0}
+              />
+              <Button size="sm" onClick={onCreateClick}>
+                <Plus className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">New Equipment</span>
+                <span className="sm:hidden">New</span>
+              </Button>
+            </>
           )}
         </div>
       </div>

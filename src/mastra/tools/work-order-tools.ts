@@ -429,7 +429,7 @@ export const createWorkOrderTool = createTool({
  */
 export const updateWorkOrderTool = createTool({
   id: 'update-wo-tool',
-  description: 'Update an existing work order by display ID (e.g., WO-ACME-20251031-001). If you only have a title, use list-wo-tool with search parameter first to find the work order.',
+  description: 'Update an existing work order by display ID (e.g., WO-ACME-20251031-001). If you only have a title, use list-wo-tool with search parameter first to find the work order. Use this to link equipment to a work order by providing the equipment_id.',
   inputSchema: z.object({
     id: z.string().describe('The work order display ID (e.g., WO-ACME-20251031-001)'),
     title: z.string().optional().describe('Work order title'),
@@ -438,6 +438,7 @@ export const updateWorkOrderTool = createTool({
     status: z.enum(['open', 'in_progress', 'completed', 'cancelled']).optional().describe('Work order status'),
     assigned_to: z.string().optional().describe('User ID to assign to'),
     due_date: z.string().optional().describe('Due date (ISO format, e.g., "2025-11-10" or full ISO string)'),
+    equipment_id: z.string().optional().describe('Equipment ID (UUID) to link to this work order. Use list-eq-tool or get-eq-tool first to find the equipment ID.'),
   }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: async ({ context, runtimeContext }: { context?: any; runtimeContext: RuntimeContext }) => {

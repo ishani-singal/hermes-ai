@@ -67,6 +67,7 @@ export const GET = route()
       .select(`
         *,
         equipment_files:equipment_files (
+          equipment_id,
           equipment:equipment (
             id,
             display_id,
@@ -74,6 +75,7 @@ export const GET = route()
           )
         ),
         work_order_files:work_order_files (
+          work_order_id,
           work_order:work_orders (
             id,
             display_id,
@@ -87,14 +89,9 @@ export const GET = route()
     // Filter out archived documents (stored in metadata)
     query = query.filter('metadata->>archived_at', 'is', null);
 
-    // Apply filters
-    if (filters.equipment_id) {
-      query = query.eq('equipment_files.equipment_id', filters.equipment_id);
-    }
-
-    if (filters.work_order_id) {
-      query = query.eq('work_order_files.work_order_id', filters.work_order_id);
-    }
+    // Note: We filter by equipment_id/work_order_id after fetching because
+    // Supabase's nested filtering returns parent rows even without matches.
+    // The actual filtering happens in the mapping step below.
 
     if (filters.type) {
       query = query.eq('metadata->>document_type', filters.type);
@@ -135,9 +132,11 @@ export const GET = route()
 
     // Map files to Document type
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const documents: Document[] = (data || []).map((file: any) => {
+    let documents: Document[] = (data || []).map((file: any) => {
       const equipmentLink = file.equipment_files?.[0];
+      const workOrderLink = file.work_order_files?.[0];
       const equipment = equipmentLink?.equipment;
+      const workOrder = workOrderLink?.work_order;
       const metadata = file.metadata || {};
 
       return {
@@ -160,9 +159,33 @@ export const GET = route()
           id: equipment.id,
           display_id: equipment.display_id,
           name: equipment.name
-        } : undefined
+        } : undefined,
+        work_order: workOrder ? {
+          id: workOrder.id,
+          display_id: workOrder.display_id,
+          title: workOrder.title
+        } : undefined,
+        // Include raw link data for filtering
+        _equipmentFileIds: file.equipment_files?.map((ef: { equipment_id: string }) => ef.equipment_id) || [],
+        _workOrderFileIds: file.work_order_files?.map((wf: { work_order_id: string }) => wf.work_order_id) || [],
       };
     });
+
+    // Filter documents to only include those linked to the specified equipment/work order
+    // This is needed because Supabase's nested filtering doesn't exclude parent rows
+    if (filters.equipment_id) {
+      documents = documents.filter((doc: Document & { _equipmentFileIds?: string[] }) => 
+        doc._equipmentFileIds?.includes(filters.equipment_id!)
+      );
+    }
+    if (filters.work_order_id) {
+      documents = documents.filter((doc: Document & { _workOrderFileIds?: string[] }) => 
+        doc._workOrderFileIds?.includes(filters.work_order_id!)
+      );
+    }
+
+    // Remove internal filtering properties before returning
+    documents = documents.map(({ _equipmentFileIds, _workOrderFileIds, ...doc }: Document & { _equipmentFileIds?: string[]; _workOrderFileIds?: string[] }) => doc) as Document[];
 
     const response: DocumentListResponse = {
       data: documents,
