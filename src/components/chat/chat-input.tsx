@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Mic, StopCircle, Plus, Camera, Image as ImageIcon, FileText, Radio } from 'lucide-react'
+import { Send, StopCircle, Plus, Camera, Image as ImageIcon, FileText, Radio } from 'lucide-react'
 import { CameraModal } from '@/components/ui/camera-modal'
 
 type ChatInputProps = {
@@ -10,11 +10,9 @@ type ChatInputProps = {
   onSend: () => void
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   listening: boolean
-  onMicClick: () => void
   onTurnByTurnClick?: () => void
   loading: boolean
   streamMode: boolean
-  pushToTalkMode: boolean
   turnByTurnMode?: boolean
   isTTSPlaying?: boolean
   onStopTTS?: () => void
@@ -28,11 +26,9 @@ export function ChatInput({
   onSend,
   onKeyDown,
   listening,
-  onMicClick,
   onTurnByTurnClick,
   loading,
   streamMode,
-  pushToTalkMode,
   isTTSPlaying,
   onPhotoSelect,
   onDocumentSelect,
@@ -67,9 +63,8 @@ export function ChatInput({
   // Disable send button when:
   // 1. Loading (awaiting response)
   // 2. In stream mode (auto-send is enabled)
-  // 3. Listening in push-to-talk mode
-  // 4. TTS is playing
-  const isSendDisabled = loading || streamMode || (listening && pushToTalkMode) || isTTSPlaying
+  // 3. TTS is playing
+  const isSendDisabled = loading || streamMode || isTTSPlaying
 
   const handlePhotoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -223,18 +218,6 @@ export function ChatInput({
             className="inline-flex items-center justify-center w-[46px] h-[46px] rounded-md bg-brand text-white hover:brightness-110 disabled:opacity-60 transition-all"
           >
             <Send className="h-5 w-5" />
-          </button>
-          <button
-            onClick={onMicClick}
-            title={listening && pushToTalkMode ? 'Stop voice input' : 'Start voice input (push-to-talk)'}
-            className={
-              'inline-flex items-center justify-center w-[46px] h-[46px] rounded-md border transition-colors ' +
-              (listening && pushToTalkMode ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
-            }
-          >
-            <span className={listening && pushToTalkMode ? 'animate-pulse' : ''}>
-              <Mic className="h-5 w-5" />
-            </span>
           </button>
           {onTurnByTurnClick && (
             <button

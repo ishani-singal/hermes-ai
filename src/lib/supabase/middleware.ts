@@ -41,8 +41,8 @@ export async function updateSession(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(route + '/')
   )
 
-  // API routes that should be publicly accessible (signup, login, etc.)
-  const publicApiRoutes = ['/api/auth/signup', '/api/auth/login']
+  // API routes that should be publicly accessible (signup, login, invite validation, etc.)
+  const publicApiRoutes = ['/api/auth/signup', '/api/auth/login', '/api/invites/validate']
   const isPublicApiRoute = publicApiRoutes.some((route) => pathname.startsWith(route))
 
   // If no user and trying to access protected route, redirect to login

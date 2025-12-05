@@ -62,7 +62,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
 
   const [streamMode, setStreamMode] = useState(false)
   const streamModeRef = useRef(false)
-  const [pushToTalkMode, setPushToTalkMode] = useState(false)
   const isAutoRestarting = useRef(false)
   const [isTTSPlaying, setIsTTSPlaying] = useState(false)
 
@@ -146,7 +145,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
         // Dictation mode: update input and stop
         setInput(text)
         stop()
-        setPushToTalkMode(false)
       }
     },
     autoContinue: true,
@@ -304,7 +302,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     // Reset stream mode states
     if (streamMode) {
       setStreamMode(false)
-      setPushToTalkMode(false)
     }
 
     setLoading(false)
@@ -422,7 +419,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
                 console.warn('Failed to restart listening after TTS, exiting stream mode:', restartErr)
                 streamModeRef.current = false
                 setStreamMode(false)
-                setPushToTalkMode(false)
                 isAutoRestarting.current = false
               }
             }, 500)
@@ -435,7 +431,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             console.log('Audio playback failed in stream mode, exiting gracefully')
             streamModeRef.current = false
             setStreamMode(false)
-            setPushToTalkMode(false)
           }
         }
       }
@@ -461,23 +456,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
     }
   }
 
-  const handleMicClick = () => {
-    if (isRecording) {
-      setPushToTalkMode(false)
-      stop()
-    } else {
-      // If stream mode is active, stop it first
-      if (streamMode) {
-        streamModeRef.current = false
-        setStreamMode(false)
-        stop()
-        return
-      }
-      setPushToTalkMode(true)
-      void start()
-    }
-  }
-
   const handleTurnByTurnClick = () => {
     if (isTTSPlaying || loading) {
       streamModeRef.current = false
@@ -490,10 +468,6 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
       setStreamMode(false)
       stopAll()
     } else {
-      // If push to talk is active, stop it first
-      if (pushToTalkMode) {
-        setPushToTalkMode(false)
-      }
       streamModeRef.current = true
       setStreamMode(true)
       void start()
@@ -853,11 +827,9 @@ export function Chat({ messages, setMessages, threadId, setThreadId }: ChatProps
             onSend={() => void send()}
             onKeyDown={onKeyDown}
             listening={isRecording}
-            onMicClick={handleMicClick}
             onTurnByTurnClick={handleTurnByTurnClick}
             loading={loading || isProcessing}
             streamMode={streamMode}
-            pushToTalkMode={pushToTalkMode}
             turnByTurnMode={true}
             isTTSPlaying={isTTSPlaying}
             onStopTTS={handleStopTTS}

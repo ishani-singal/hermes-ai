@@ -8,7 +8,6 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const [isCreatingCompany, setIsCreatingCompany] = useState(false)
 
   const [formData, setFormData] = useState({
     email: '',
@@ -31,12 +30,7 @@ export default function SignUpPage() {
     setIsLoading(true)
 
     try {
-      // Select API endpoint based on mode
-      const endpoint = isCreatingCompany 
-        ? '/api/auth/signup/create-company'
-        : '/api/auth/signup/join-company'
-
-      const response = await fetch(endpoint, {
+      const response = await fetch('/api/auth/signup/create-company', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -63,22 +57,43 @@ export default function SignUpPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">
-        Create your account
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">
+        Create your company
       </h2>
+      <p className="text-gray-600 mb-6">
+        Set up a new company account and become the admin
+      </p>
 
       {/* Success Message */}
       {success && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
-          <h3 className="text-sm font-medium text-green-800 mb-1">
-            Account created successfully!
+        <div className="mb-6 p-6 bg-green-50 border border-green-200 rounded-lg text-center">
+          <div className="mb-3">
+            <svg
+              className="mx-auto h-10 w-10 text-green-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 mb-2">
+            Account Created!
           </h3>
-          <p className="text-sm text-green-700">
-            Please check your email to verify your account, then{' '}
-            <Link href="/login" className="underline font-medium">
-              sign in
-            </Link>.
+          <p className="text-sm text-gray-600 mb-4">
+            Your company <strong>{formData.companyName}</strong> has been set up successfully.
           </p>
+          <Link 
+            href="/login" 
+            className="inline-block px-6 py-2 bg-brand text-white font-medium rounded-md hover:bg-brand-light transition-colors"
+          >
+            Sign In
+          </Link>
         </div>
       )}
 
@@ -90,28 +105,6 @@ export default function SignUpPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Mode Toggle */}
-        <div className="p-4 bg-brand/10 border border-brand rounded-md">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isCreatingCompany}
-              onChange={(e) => setIsCreatingCompany(e.target.checked)}
-              className="mt-0.5 h-4 w-4 text-brand rounded focus:ring-2 focus:ring-brand"
-            />
-            <div className="flex-1">
-              <span className="block text-sm font-medium text-gray-900">
-                Create new company
-              </span>
-              <span className="block text-xs text-gray-600 mt-0.5">
-                {isCreatingCompany 
-                  ? "You'll become the admin of a new company." 
-                  : "Join an existing company."}
-              </span>
-            </div>
-          </label>
-        </div>
-
         {/* Full Name */}
         <div>
           <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
@@ -124,7 +117,7 @@ export default function SignUpPage() {
             required
             value={formData.fullName}
             onChange={handleChange}
-            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand"
             placeholder="John Doe"
           />
         </div>
@@ -141,7 +134,7 @@ export default function SignUpPage() {
             required
             value={formData.email}
             onChange={handleChange}
-            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand"
             placeholder="john@example.com"
           />
         </div>
@@ -159,7 +152,7 @@ export default function SignUpPage() {
             minLength={8}
             value={formData.password}
             onChange={handleChange}
-            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand"
             placeholder="••••••••"
           />
           <p className="mt-1 text-xs text-gray-500">
@@ -179,31 +172,20 @@ export default function SignUpPage() {
             required
             value={formData.companyName}
             onChange={handleChange}
-            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand"
             placeholder="Acme Manufacturing"
           />
           <p className="mt-1 text-xs text-gray-500">
-            {isCreatingCompany 
-              ? "Enter a unique name for your new company"
-              : "Enter the exact name of the company you want to join"}
+            Enter a unique name for your new company
           </p>
         </div>
 
-        {/* Primary Contact Checkbox (Only show when creating company) */}
-        {isCreatingCompany && (
-          <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md border border-gray-200">
-            <input
-              id="primaryContact"
-              type="checkbox"
-              checked={true}
-              disabled={true}
-              className="h-4 w-4 text-blue-600 opacity-50 cursor-not-allowed"
-            />
-            <label htmlFor="primaryContact" className="text-sm text-gray-600">
-              Make me the primary contact for this company
-            </label>
-          </div>
-        )}
+        {/* Admin note */}
+        <div className="p-3 bg-brand/10 rounded-md border border-brand/20">
+          <p className="text-sm text-gray-700">
+            <strong>You&apos;ll become the admin</strong> and can invite team members after signing up.
+          </p>
+        </div>
 
         {/* Submit Button */}
         <button
@@ -211,16 +193,19 @@ export default function SignUpPage() {
           disabled={isLoading || success}
           className="w-full min-h-[44px] px-4 py-3 bg-brand text-white font-medium rounded-md hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
-          {isLoading 
-            ? 'Creating account...' 
-            : isCreatingCompany 
-              ? 'Create company & sign up'
-              : 'Join company & sign up'}
+          {isLoading ? 'Creating account...' : 'Create Company & Sign Up'}
         </button>
       </form>
 
+      {/* Invited? Link */}
+      <div className="mt-6 p-3 bg-gray-50 rounded-md border border-gray-200">
+        <p className="text-sm text-gray-600 text-center">
+          <strong>Have an invite link?</strong> Use the link you received from your company admin to join.
+        </p>
+      </div>
+
       {/* Sign In Link */}
-      <p className="mt-6 text-center text-sm text-gray-600">
+      <p className="mt-4 text-center text-sm text-gray-600">
         Already have an account?{' '}
         <Link href="/login" className="text-blue-600 hover:text-blue-700 font-medium">
           Sign in
