@@ -260,22 +260,22 @@ export default function AdminInvitesPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-2">
           <ArrowLeft className="h-4 w-4" />
           Back to Dashboard
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Invite Team Members</h1>
-            <p className="text-gray-600 mt-1">Send invites to add new members to your company</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Invite Team Members</h1>
+            <p className="text-sm sm:text-base text-gray-600 mt-1">Send invites to add new members to your company</p>
           </div>
           {!showCreateForm && (
-            <Button onClick={() => setShowCreateForm(true)}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              New Invite
+            <Button onClick={() => setShowCreateForm(true)} className="sm:w-auto" title="New Invite">
+              <UserPlus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">New Invite</span>
             </Button>
           )}
         </div>
@@ -285,7 +285,11 @@ export default function AdminInvitesPage() {
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center justify-between">
           <p className="text-sm text-red-600">{error}</p>
-          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+          <button 
+            onClick={() => setError(null)} 
+            className="text-red-600 hover:text-red-800"
+            aria-label="Dismiss error"
+          >
             <XCircle className="h-4 w-4" />
           </button>
         </div>
@@ -335,7 +339,11 @@ export default function AdminInvitesPage() {
                 Share this link with <strong>{createdInvite.invite.email}</strong>
               </p>
             </div>
-            <button onClick={() => setCreatedInvite(null)} className="text-green-600 hover:text-green-800">
+            <button 
+              onClick={() => setCreatedInvite(null)} 
+              className="text-green-600 hover:text-green-800"
+              aria-label="Dismiss success message"
+            >
               <XCircle className="h-5 w-5" />
             </button>
           </div>
