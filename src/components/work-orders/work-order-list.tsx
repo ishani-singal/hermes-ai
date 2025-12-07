@@ -119,7 +119,7 @@ export function WorkOrderList({ onCreateClick, onWorkOrderClick }: WorkOrderList
       </div>
 
       {/* Work Order List */}
-      <div className="space-y-4">
+      <div className="space-y-2 sm:space-y-4">
         {workOrders.map((workOrder) => (
           <WorkOrderCard
             key={workOrder.id}

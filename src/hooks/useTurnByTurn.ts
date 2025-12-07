@@ -65,7 +65,8 @@ export function useTurnByTurn(options: UseTurnByTurnOptions = {}) {
         if (sourceNodeRef.current) {
             try {
                 sourceNodeRef.current.stop()
-            } catch (e) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (_e) {
                 // Ignore errors if already stopped
             }
             sourceNodeRef.current = null

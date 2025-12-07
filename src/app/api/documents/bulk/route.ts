@@ -24,8 +24,9 @@ import * as helpers from '@/lib/auth/helpers';
 import type { DocumentType, DocumentScope, DocumentStatus } from '@/types';
 import { contentQueue } from '@/lib/queue/simple-queue';
 import type { IndexContentParams } from '@/mastra/services/rag';
-import { parsePDF } from '@/lib/parsers/pdf-parser';
-import { analyzeDocumentWithExtraction } from '@/lib/parsers/pdf-summarizer';
+// Note: parsePDF and analyzeDocumentWithExtraction may be used in future for inline processing
+// import { parsePDF } from '@/lib/parsers/pdf-parser';
+// import { analyzeDocumentWithExtraction } from '@/lib/parsers/pdf-summarizer';
 
 // Limits
 const MAX_FILES = 10;

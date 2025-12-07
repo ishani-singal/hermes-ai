@@ -185,6 +185,7 @@ export const GET = route()
     }
 
     // Remove internal filtering properties before returning
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     documents = documents.map(({ _equipmentFileIds, _workOrderFileIds, ...doc }: Document & { _equipmentFileIds?: string[]; _workOrderFileIds?: string[] }) => doc) as Document[];
 
     const response: DocumentListResponse = {

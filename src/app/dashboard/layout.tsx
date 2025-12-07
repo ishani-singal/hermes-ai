@@ -30,8 +30,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-slate-50 via-brand/5 to-slate-50">
-      {/* Header - Fixed at top on all screens */}
-      <header className="bg-gradient-to-r from-white via-white to-brand/10 backdrop-blur-sm border-b border-brand/20 shadow-sm flex-shrink-0 sticky top-0 z-50">
+      {/* Header - Fixed at top on all screens with safe area padding for notched devices */}
+      <header className="bg-gradient-to-r from-white via-white to-brand/10 backdrop-blur-sm border-b border-brand/20 shadow-sm flex-shrink-0 sticky top-0 z-50" style={{ paddingTop: 'var(--safe-area-inset-top)' }}>
         <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo/Brand */}

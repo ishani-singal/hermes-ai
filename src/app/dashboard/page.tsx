@@ -92,7 +92,7 @@ export default function DashboardPage() {
   const handlePhotoUploadSuccess = () => setPhotoRefreshTrigger((p) => p + 1)
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)]">
+    <div className="flex flex-col md:flex-row h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4rem)] min-h-0">
       {/* Side Navigation */}
       <SideNav
         items={navItems}
@@ -165,7 +165,7 @@ export default function DashboardPage() {
 
         {activeNav === 'data-hub' && (
           <div className="space-y-4">
-            <div className="border-b border-gray-200">
+            <div className="sticky top-0 z-10 bg-white -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 py-2 border-b border-gray-200">
               <Tabs
                 tabs={dataHubTabs}
                 activeTab={dataHubTab}

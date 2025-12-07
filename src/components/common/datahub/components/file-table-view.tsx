@@ -75,23 +75,23 @@ export function FileTableView({
                 <table className="w-full">
                     <thead>
                         <tr className="border-b border-gray-200 bg-gray-50">
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">
+                            <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-gray-900">
                                 {fileType === 'document' ? 'Title' : 'File'}
                             </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Type</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Equipment</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">
+                            <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-semibold text-gray-900">Type</th>
+                            <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-semibold text-gray-900">Equipment</th>
+                            <th className="hidden lg:table-cell px-4 py-3 text-left text-xs font-semibold text-gray-900">
                                 {fileType === 'document' ? 'Scope' : 'Link'}
                             </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Status</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Size</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-900">Actions</th>
+                            <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-gray-900">Status</th>
+                            <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-semibold text-gray-900">Size</th>
+                            <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-gray-900">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                         {files.map((file) => (
                             <tr key={file.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-4 py-3">
+                                <td className="px-3 sm:px-4 py-3">
                                     <div className="flex items-center gap-2">
                                         {fileType === 'document' ? (
                                             <File className="h-4 w-4 text-gray-400 flex-shrink-0" />
@@ -99,7 +99,7 @@ export function FileTableView({
                                             <Image className="h-4 w-4 text-gray-400 flex-shrink-0" />
                                         )}
                                         <div className="min-w-0">
-                                            <p className="text-sm font-medium text-gray-900 truncate max-w-[200px]" title={file.title || file.description}>
+                                            <p className="text-sm font-medium text-gray-900 truncate max-w-[120px] sm:max-w-[200px]" title={file.title || file.description}>
                                                 {file.title || file.description || 'Untitled'}
                                             </p>
                                             <p className="text-xs text-gray-500 font-mono">
@@ -108,12 +108,12 @@ export function FileTableView({
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="hidden sm:table-cell px-4 py-3">
                                     <span className="text-sm text-gray-700">
                                         {getTypeLabel(file.type || file.link_type || 'other')}
                                     </span>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="hidden md:table-cell px-4 py-3">
                                     {file.equipment ? (
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium text-gray-900 truncate max-w-[150px]" title={file.equipment.name}>
@@ -127,7 +127,7 @@ export function FileTableView({
                                         <span className="text-sm text-gray-400 italic">-</span>
                                     )}
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="hidden lg:table-cell px-4 py-3">
                                     {fileType === 'document' ? (
                                         <Badge variant="info" size="sm">
                                             {getScopeLabel(file.scope || 'company')}
@@ -147,17 +147,17 @@ export function FileTableView({
                                         )
                                     )}
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-3 sm:px-4 py-3">
                                     <Badge variant={getStatusBadgeVariant(file.status)} size="sm">
                                         {getStatusLabel(file.status)}
                                     </Badge>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="hidden sm:table-cell px-4 py-3">
                                     <span className="text-sm text-gray-700">
                                         {(file.file_size / 1024 / 1024).toFixed(2)} MB
                                     </span>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-3 sm:px-4 py-3">
                                     <FileItemActions
                                         fileUrl={file.file_url}
                                         fileName={file.title || file.display_id}

@@ -1,6 +1,7 @@
 import { createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
-import { translateToEnglishStep, translateBackStep } from './steps/translation-steps';
+// Translation steps reserved for future multilingual support
+// import { translateToEnglishStep, translateBackStep } from './steps/translation-steps';
 import { technicianStep } from './steps/technician-step';
 import { voiceFormatterStep } from './steps/voice-formatter-step';
 import { ttsStep } from './steps/tts-step';

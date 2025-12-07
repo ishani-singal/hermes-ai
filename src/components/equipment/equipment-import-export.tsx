@@ -9,8 +9,7 @@ import {
   FileSpreadsheet, 
   AlertCircle, 
   CheckCircle, 
-  SkipForward,
-  X
+  SkipForward
 } from 'lucide-react'
 import type { EquipmentImportResult } from '@/lib/api/equipment-helpers'
 

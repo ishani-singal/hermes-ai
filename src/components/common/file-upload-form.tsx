@@ -80,6 +80,7 @@ export function FileUploadForm({
   showDescription = true,
   showLinkType = false,
   buttonText = 'Upload File',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   variant = 'inline',
 }: FileUploadFormProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

@@ -160,7 +160,7 @@ export function EquipmentList({ onCreateClick, onEquipmentClick }: EquipmentList
       </div>
 
       {/* Equipment List */}
-      <div className="space-y-4">
+      <div className="space-y-2 sm:space-y-4">
         {equipment.map((eq) => (
           <EquipmentCard
             key={eq.id}

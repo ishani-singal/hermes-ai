@@ -388,7 +388,73 @@ export default function AdminInvitesPage() {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <>
+          {/* Mobile Card View */}
+          <div className="block md:hidden space-y-3">
+            {invites.map((invite) => (
+              <div key={invite.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 truncate">{invite.email}</p>
+                    <p className="text-xs text-gray-500">Invited {formatDate(invite.created_at)}</p>
+                  </div>
+                  {getStatusBadge(invite.status)}
+                </div>
+                
+                <div className="flex items-center justify-between text-sm">
+                  <div className="space-y-1">
+                    <p className="text-gray-600">
+                      <span className="text-gray-500">Role:</span> <span className="capitalize">{invite.role}</span>
+                    </p>
+                    <p className="text-gray-600">
+                      <span className="text-gray-500">{invite.status === 'accepted' ? 'Accepted:' : 'Expires:'}</span>{' '}
+                      {invite.status === 'accepted' ? formatDate(invite.used_at!) : formatDate(invite.expires_at)}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    {invite.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => handleResendInvite(invite)}
+                          className="p-2 text-gray-600 hover:text-brand rounded-md hover:bg-gray-100"
+                          title="Regenerate invite link"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEditClick(invite)}
+                          className="p-2 text-gray-600 hover:text-brand rounded-md hover:bg-gray-100"
+                          title="Edit invite"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
+                    {invite.status === 'expired' && (
+                      <button
+                        onClick={() => handleResendInvite(invite)}
+                        className="p-2 text-gray-600 hover:text-brand rounded-md hover:bg-gray-100"
+                        title="Regenerate invite link"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setDeletingInvite(invite)}
+                      className="p-2 text-gray-600 hover:text-red-600 rounded-md hover:bg-gray-100"
+                      title="Delete invite"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden md:block bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -471,7 +537,8 @@ export default function AdminInvitesPage() {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {/* Confirmation dialog */}

@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { X, Camera, RefreshCw } from 'lucide-react'
-import { Dialog } from './dialog'
+import { X, RefreshCw } from 'lucide-react'
 
 interface CameraModalProps {
   open: boolean
@@ -16,6 +15,18 @@ export function CameraModal({ open, onOpenChange, onCapture }: CameraModalProps)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
+
+  // Lock body scroll when camera is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [open])
 
   useEffect(() => {
     if (open) {
@@ -91,59 +102,77 @@ export function CameraModal({ open, onOpenChange, onCapture }: CameraModalProps)
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user')
   }
 
+  const handleClose = () => {
+    stopCamera()
+    onOpenChange(false)
+  }
+
+  if (!open) return null
+
   return (
-    <Dialog 
-      open={open} 
-      onOpenChange={onOpenChange}
-      title="Take Photo"
-      size="lg"
-    >
-      <div className="relative bg-black rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+      {/* Header with close button */}
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent">
+        <h2 className="text-white font-semibold text-lg">Take Photo</h2>
+        <button
+          onClick={handleClose}
+          className="p-2 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors"
+          aria-label="Close camera"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+
+      {/* Camera viewfinder - takes full available space */}
+      <div className="flex-1 relative flex items-center justify-center">
         {error ? (
           <div className="text-white p-4 text-center">
-            <p className="mb-2">{error}</p>
+            <p className="mb-4">{error}</p>
             <button 
               onClick={() => startCamera()}
-              className="px-4 py-2 bg-white text-black rounded-md text-sm"
+              className="px-6 py-3 bg-white text-black rounded-lg text-sm font-medium"
             >
               Retry
             </button>
           </div>
         ) : (
-          <>
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              muted
-              className="w-full h-full object-cover"
-            />
-            <canvas ref={canvasRef} className="hidden" />
-            
-            <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-4">
-              <button
-                onClick={toggleCamera}
-                className="p-3 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors"
-                title="Switch camera"
-              >
-                <RefreshCw className="h-6 w-6" />
-              </button>
-              
-              <button
-                onClick={handleCapture}
-                className="p-4 rounded-full bg-white text-brand-primary hover:scale-105 transition-transform shadow-lg"
-                title="Capture photo"
-              >
-                <div className="h-12 w-12 rounded-full border-4 border-brand-primary flex items-center justify-center">
-                  <div className="h-10 w-10 rounded-full bg-brand-primary" />
-                </div>
-              </button>
-              
-              <div className="w-12" /> {/* Spacer for centering */}
-            </div>
-          </>
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            muted
+            className="w-full h-full object-cover"
+          />
         )}
+        <canvas ref={canvasRef} className="hidden" />
       </div>
-    </Dialog>
+
+      {/* Camera controls at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 pb-8 pt-4 bg-gradient-to-t from-black/50 to-transparent">
+        <div className="flex justify-center items-center gap-8">
+          <button
+            onClick={toggleCamera}
+            className="p-4 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors"
+            title="Switch camera"
+          >
+            <RefreshCw className="h-6 w-6" />
+          </button>
+          
+          <button
+            onClick={handleCapture}
+            className="p-2 rounded-full bg-white hover:scale-105 transition-transform shadow-lg"
+            title="Capture photo"
+            disabled={!!error}
+          >
+            <div className="h-16 w-16 rounded-full border-4 border-brand flex items-center justify-center">
+              <div className="h-12 w-12 rounded-full bg-brand" />
+            </div>
+          </button>
+          
+          {/* Spacer for centering */}
+          <div className="w-14 h-14" />
+        </div>
+      </div>
+    </div>
   )
 }

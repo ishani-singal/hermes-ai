@@ -195,6 +195,7 @@ export const GET = route()
     }
 
     // Remove internal filtering properties before returning
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     photos = photos.map(({ _equipmentFileIds, _workOrderFileIds, ...photo }: Photo & { _equipmentFileIds?: string[]; _workOrderFileIds?: string[] }) => photo) as Photo[];
 
     const response: PhotoListResponse = {
