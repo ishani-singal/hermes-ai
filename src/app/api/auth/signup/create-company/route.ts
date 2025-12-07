@@ -28,14 +28,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Use admin client to bypass RLS for signup operations
-    const supabase = createServiceRoleClient()
+    // IMPORTANT: Create separate clients for auth vs database operations
+    // because auth.signUp() sets a session that would override service role
+    const supabaseAdmin = createServiceRoleClient()
+    const supabaseAuth = createServiceRoleClient()
 
     // Check if company name already exists
     // Normalize: trim and collapse multiple spaces to single space
     const normalizedCompanyName = companyName.trim().replace(/\s+/g, ' ')
 
     // Fetch all companies and check for duplicates with normalized comparison
-    const { data: companies, error: companiesError } = await supabase
+    const { data: companies, error: companiesError } = await supabaseAdmin
       .from('companies')
       .select('id, name')
 
@@ -59,8 +62,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 1: Create auth user
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // Step 1: Create auth user (use separate client to avoid session pollution)
+    const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
       email,
       password,
       options: {
@@ -80,14 +83,14 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id
 
-    // Step 2: Generate company_code from company name
-    const { data: companyCodeData, error: companyCodeError } = await supabase
+    // Step 2: Generate company_code from company name (use admin client)
+    const { data: companyCodeData, error: companyCodeError } = await supabaseAdmin
       .rpc('generate_company_code', { p_company_name: normalizedCompanyName })
 
     if (companyCodeError) {
       console.error('Company code generation error:', companyCodeError)
       // Cleanup
-      await supabase.auth.admin.deleteUser(userId)
+      await supabaseAuth.auth.admin.deleteUser(userId)
       return NextResponse.json(
         { error: 'Failed to generate company code' },
         { status: 500 }
@@ -97,7 +100,7 @@ export async function POST(request: NextRequest) {
     const companyCode = companyCodeData as string
 
     // Step 3: Create company (user's email becomes primary contact)
-    const { data: company, error: companyError } = await supabase
+    const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert({
         name: normalizedCompanyName,
@@ -111,7 +114,7 @@ export async function POST(request: NextRequest) {
       console.error('Company creation error:', companyError)
 
       // Cleanup: Delete auth user if company creation fails
-      await supabase.auth.admin.deleteUser(userId)
+      await supabaseAuth.auth.admin.deleteUser(userId)
 
       return NextResponse.json(
         { error: 'Failed to create company' },
@@ -126,7 +129,7 @@ export async function POST(request: NextRequest) {
     const maxAttempts = 5
 
     while (!user && attempts < maxAttempts) {
-      const { data: userData } = await supabase
+      const { data: userData } = await supabaseAdmin
         .from('users')
         .select('*')
         .eq('id', userId)
@@ -149,8 +152,8 @@ export async function POST(request: NextRequest) {
       console.error('User record not found after signup')
 
       // Cleanup
-      await supabase.auth.admin.deleteUser(userId)
-      await supabase.from('companies').delete().eq('id', company.id)
+      await supabaseAuth.auth.admin.deleteUser(userId)
+      await supabaseAdmin.from('companies').delete().eq('id', company.id)
 
       return NextResponse.json(
         { error: 'Failed to create user profile' },
@@ -159,7 +162,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 5: Create user_companies relationship (admin role)
-    const { error: userCompanyError } = await supabase
+    const { error: userCompanyError } = await supabaseAdmin
       .from('user_companies')
       .insert({
         user_id: userId,
@@ -172,8 +175,8 @@ export async function POST(request: NextRequest) {
       console.error('User-company relationship error:', userCompanyError)
 
       // Cleanup
-      await supabase.auth.admin.deleteUser(userId)
-      await supabase.from('companies').delete().eq('id', company.id)
+      await supabaseAuth.auth.admin.deleteUser(userId)
+      await supabaseAdmin.from('companies').delete().eq('id', company.id)
 
       return NextResponse.json(
         { error: 'Failed to link user to company' },
@@ -182,7 +185,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Update user's default_company_id
-    await supabase
+    await supabaseAdmin
       .from('users')
       .update({ default_company_id: company.id })
       .eq('id', userId)
