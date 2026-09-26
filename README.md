@@ -1,6 +1,12 @@
-# HAI Technician Assistant
+# Hermes AI
 
 An AI-powered assistant for manufacturing technicians on the shop floor. Built with Next.js, Supabase, and Mastra.
+
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE) — free to use, modify, and share for any noncommercial purpose (personal projects, research, education, evaluation).
+
+**Commercial use is not covered by this license.** If you want to use this software, or anything derived from it, in a for-profit product or service, contact Ishani Singal to arrange a commercial license. Commercial terms are negotiated case-by-case and may include a revenue-sharing arrangement.
 
 ## Features
 
